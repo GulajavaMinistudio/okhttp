@@ -41,6 +41,8 @@ public final class PublicSuffixDatabase {
 
   private static final byte EXCEPTION_MARKER = '!';
 
+  private static final PublicSuffixDatabase instance = new PublicSuffixDatabase();
+
   /** True after we've attempted to read the list for the first time. */
   private final AtomicBoolean listRead = new AtomicBoolean(false);
 
@@ -54,6 +56,10 @@ public final class PublicSuffixDatabase {
   private byte[] publicSuffixListBytes;
   private byte[] publicSuffixExceptionListBytes;
 
+  public static PublicSuffixDatabase get() {
+    return instance;
+  }
+
   /**
    * Returns the effective top-level domain plus one (eTLD+1) by referencing the public suffix list.
    * Returns null if the domain is a public suffix.
@@ -63,27 +69,17 @@ public final class PublicSuffixDatabase {
    * assertEquals("google.com", getEffectiveTldPlusOne("www.google.com"));
    * assertNull(getEffectiveTldPlusOne("com"));
    * }</pre>
+   *
+   * @param domain A canonicalized domain. An International Domain Name (IDN) should be punycode
+   *    encoded.
    */
   public String getEffectiveTldPlusOne(String domain) {
-    if (domain == null) return null;
+    if (domain == null) throw new NullPointerException("domain == null");
 
-    // Confirm we're dealing with a valid domain.
-    // TODO: Domains that start with '.' will be null on JDK8, but not on JDK7.
-    String canonicalDomain = Util.domainToAscii(domain);
-    if (canonicalDomain == null || canonicalDomain.startsWith(".")) return null;
-
-    // Convert it back to Unicode because the list uses Unicode, not punycode form.
-    String unicodeDomain = IDN.toUnicode(canonicalDomain);
-
-    // Preserve the passed in domain format (Unicode vs. punycode), but canonicalize it. This
-    // satisfies the publicsuffix.org test cases, but it's unclear if this should be done generally.
-    String domainToReturn = canonicalDomain.equalsIgnoreCase(domain)
-        ? canonicalDomain // We were passed a punycode domain.
-        : unicodeDomain; // We were passed a Unicode domain.
-
+    // We use UTF-8 in the list so we need to convert to Unicode.
+    String unicodeDomain = IDN.toUnicode(domain);
     String[] domainLabels = unicodeDomain.split("\\.");
     String[] rule = findMatchingRule(domainLabels);
-
     if (domainLabels.length == rule.length && rule[0].charAt(0) != EXCEPTION_MARKER) {
       // The domain is a public suffix.
       return null;
@@ -98,10 +94,10 @@ public final class PublicSuffixDatabase {
       firstLabelOffset = domainLabels.length - (rule.length + 1);
     }
 
-    String[] domainToReturnLabels = domainToReturn.split("\\.");
     StringBuilder effectiveTldPlusOne = new StringBuilder();
-    for (int i = firstLabelOffset; i < domainToReturnLabels.length; i++) {
-      effectiveTldPlusOne.append(domainToReturnLabels[i]).append('.');
+    String[] punycodeLabels = domain.split("\\.");
+    for (int i = firstLabelOffset; i < punycodeLabels.length; i++) {
+      effectiveTldPlusOne.append(punycodeLabels[i]).append('.');
     }
     effectiveTldPlusOne.deleteCharAt(effectiveTldPlusOne.length() - 1);
 
