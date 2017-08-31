@@ -156,12 +156,13 @@ public final class MockWebServer extends ExternalResource implements Closeable {
 
   public String getHostName() {
     before();
-    return inetSocketAddress.getHostName();
+    return inetSocketAddress.getAddress().getCanonicalHostName();
   }
 
   public Proxy toProxyAddress() {
     before();
-    InetSocketAddress address = new InetSocketAddress(inetSocketAddress.getAddress(), getPort());
+    InetSocketAddress address = new InetSocketAddress(inetSocketAddress.getAddress()
+            .getCanonicalHostName(), getPort());
     return new Proxy(Proxy.Type.HTTP, address);
   }
 
@@ -580,7 +581,7 @@ public final class MockWebServer extends ExternalResource implements Closeable {
     Headers.Builder headers = new Headers.Builder();
     long contentLength = -1;
     boolean chunked = false;
-    boolean readBody = true;
+    boolean expectContinue = false;
     String header;
     while ((header = source.readUtf8LineStrict()).length() != 0) {
       Internal.instance.addLenient(headers, header);
@@ -594,25 +595,22 @@ public final class MockWebServer extends ExternalResource implements Closeable {
       }
       if (lowercaseHeader.startsWith("expect:")
           && lowercaseHeader.substring(7).trim().equalsIgnoreCase("100-continue")) {
-        readBody = false;
+        expectContinue = true;
       }
     }
 
-    if (!readBody && dispatcher.peek().getSocketPolicy() == EXPECT_CONTINUE) {
+    if (expectContinue && dispatcher.peek().getSocketPolicy() == EXPECT_CONTINUE) {
       sink.writeUtf8("HTTP/1.1 100 Continue\r\n");
       sink.writeUtf8("Content-Length: 0\r\n");
       sink.writeUtf8("\r\n");
       sink.flush();
-      readBody = true;
     }
 
     boolean hasBody = false;
     TruncatingBuffer requestBody = new TruncatingBuffer(bodyLimit);
     List<Integer> chunkSizes = new ArrayList<>();
     MockResponse policy = dispatcher.peek();
-    if (!readBody) {
-      // Don't read the body unless we've invited the client to send it.
-    } else if (contentLength != -1) {
+    if (contentLength != -1) {
       hasBody = contentLength > 0;
       throttledTransfer(policy, socket, source, Okio.buffer(requestBody), contentLength, true);
     } else if (chunked) {
@@ -937,8 +935,8 @@ public final class MockWebServer extends ExternalResource implements Closeable {
         return;
       }
       List<Header> http2Headers = new ArrayList<>();
-      String[] statusParts = response.getStatus().split(" ", 2);
-      if (statusParts.length != 2) {
+      String[] statusParts = response.getStatus().split(" ", 3);
+      if (statusParts.length < 2) {
         throw new AssertionError("Unexpected status: " + response.getStatus());
       }
       // TODO: constants for well-known header names.
