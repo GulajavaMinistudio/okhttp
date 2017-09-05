@@ -23,20 +23,28 @@ import java.util.List;
 import javax.annotation.Nullable;
 
 /**
- * EventListener for analytic events for an OkHttpClient instance.
+ * Listener for metrics events. Extend this class to monitor the quantity, size, and duration of
+ * your application's HTTP calls.
+ *
+ * <h3>Warning: This is a non-final API.</h3>
+ *
+ * <p><strong>As of OkHttp 3.9, this feature is an unstable preview: the API is subject to change,
+ * and the implementation is incomplete. We expect that OkHttp 3.10 or 3.11 will finalize this API.
+ * Until then, expect API and behavior changes when you update your OkHttp dependency.</strong>
  *
  * <p>All start/connect/acquire events will eventually receive a matching end/release event,
  * either successful (non-null parameters), or failed (non-null throwable).  The first common
  * parameters of each event pair are used to link the event in case of concurrent or repeated
- * events e.g. dnsStart(call, domainName) -> dnsEnd(call, domainName, inetAddressList, throwable).
+ * events e.g. dnsStart(call, domainName) -&gt; dnsEnd(call, domainName, inetAddressList).
  *
  * <p>Nesting is as follows
  * <ul>
- * <li>call -> (dns -> connect -> secure connect)* -> request events</li>
- * <li>call -> (connection acquire/release)*</li>
+ *   <li>call -&gt; (dns -&gt; connect -&gt; secure connect)* -&gt; request events</li>
+ *   <li>call -&gt; (connection acquire/release)*</li>
  * </ul>
  *
- * <p>Request events are ordered: requestHeaders -> requestBody -> responseHeaders -> responseBody
+ * <p>Request events are ordered:
+ * requestHeaders -&gt; requestBody -&gt; responseHeaders -&gt; responseBody
  *
  * <p>Since connections may be reused, the dns and connect events may not be present for a call,
  * or may be repeated in case of failure retries, even concurrently in case of happy eyeballs type
@@ -275,6 +283,14 @@ public abstract class EventListener {
   public void callFailed(Call call, IOException ioe) {
   }
 
+  /**
+   * <h3>Warning: This is a non-final API.</h3>
+   *
+   * <p><strong>As of OkHttp 3.9, this feature is an unstable preview: the API is subject to change,
+   * and the implementation is incomplete. We expect that OkHttp 3.10 or 3.11 will finalize this
+   * API. Until then, expect API and behavior changes when you update your OkHttp
+   * dependency.</strong>
+   */
   public interface Factory {
     /**
      * Creates an instance of the {@link EventListener} for a particular {@link Call}. The returned
