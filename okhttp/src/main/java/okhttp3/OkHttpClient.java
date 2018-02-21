@@ -434,7 +434,7 @@ public class OkHttpClient implements Cloneable, Call.Factory, WebSocket.Factory 
    * Uses {@code request} to connect a new web socket.
    */
   @Override public WebSocket newWebSocket(Request request, WebSocketListener listener) {
-    RealWebSocket webSocket = new RealWebSocket(request, listener, new Random());
+    RealWebSocket webSocket = new RealWebSocket(request, listener, new Random(), pingInterval);
     webSocket.connect(this);
     return webSocket;
   }
@@ -570,8 +570,12 @@ public class OkHttpClient implements Cloneable, Call.Factory, WebSocket.Factory 
     /**
      * Sets the interval between web socket pings initiated by this client. Use this to
      * automatically send web socket ping frames until either the web socket fails or it is closed.
-     * This keeps the connection alive and may detect connectivity failures early. No timeouts are
-     * enforced on the acknowledging pongs.
+     * This keeps the connection alive and may detect connectivity failures.
+     *
+     * <p>If the server does not respond to each ping with a pong within {@code interval}, this
+     * client will assume that connectivity has been lost. When this happens the connection is
+     * canceled and its listener is {@linkplain WebSocketListener#onFailure notified of the
+     * failure}.
      *
      * <p>The default value of 0 disables client-initiated pings.
      */
@@ -583,7 +587,7 @@ public class OkHttpClient implements Cloneable, Call.Factory, WebSocket.Factory 
     /**
      * Sets the HTTP proxy that will be used by connections created by this client. This takes
      * precedence over {@link #proxySelector}, which is only honored when this proxy is null (which
-     * it is by default). To disable proxy use completely, call {@code setProxy(Proxy.NO_PROXY)}.
+     * it is by default). To disable proxy use completely, call {@code proxy(Proxy.NO_PROXY)}.
      */
     public Builder proxy(@Nullable Proxy proxy) {
       this.proxy = proxy;
