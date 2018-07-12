@@ -38,7 +38,7 @@ import okhttp3.mockwebserver.MockResponse;
 import okhttp3.mockwebserver.MockWebServer;
 import okhttp3.mockwebserver.SocketPolicy;
 import okhttp3.tls.HeldCertificate;
-import okhttp3.tls.TlsNode;
+import okhttp3.tls.HandshakeCertificates;
 import org.junit.Rule;
 import org.junit.Test;
 
@@ -57,12 +57,12 @@ public final class CertificatePinnerChainValidationTest {
   @Test public void pinRootNotPresentInChain() throws Exception {
     HeldCertificate rootCa = new HeldCertificate.Builder()
         .serialNumber(1L)
-        .certificateAuthority(3)
+        .certificateAuthority(1)
         .commonName("root")
         .build();
     HeldCertificate intermediateCa = new HeldCertificate.Builder()
         .issuedBy(rootCa)
-        .certificateAuthority(2)
+        .certificateAuthority(0)
         .serialNumber(2L)
         .commonName("intermediate_ca")
         .build();
@@ -74,19 +74,20 @@ public final class CertificatePinnerChainValidationTest {
     CertificatePinner certificatePinner = new CertificatePinner.Builder()
         .add(server.getHostName(), CertificatePinner.pin(rootCa.certificate()))
         .build();
-    TlsNode tlsNode = new TlsNode.Builder()
+    HandshakeCertificates handshakeCertificates = new HandshakeCertificates.Builder()
         .addTrustedCertificate(rootCa.certificate())
         .build();
     OkHttpClient client = defaultClient().newBuilder()
-        .sslSocketFactory(tlsNode.sslSocketFactory(), tlsNode.trustManager())
+        .sslSocketFactory(
+            handshakeCertificates.sslSocketFactory(), handshakeCertificates.trustManager())
         .hostnameVerifier(new RecordingHostnameVerifier())
         .certificatePinner(certificatePinner)
         .build();
 
-    TlsNode serverTlsNode = new TlsNode.Builder()
+    HandshakeCertificates serverHandshakeCertificates = new HandshakeCertificates.Builder()
         .heldCertificate(certificate, intermediateCa.certificate())
         .build();
-    server.useHttps(serverTlsNode.sslSocketFactory(), false);
+    server.useHttps(serverHandshakeCertificates.sslSocketFactory(), false);
 
     // The request should complete successfully.
     server.enqueue(new MockResponse()
@@ -113,12 +114,12 @@ public final class CertificatePinnerChainValidationTest {
   @Test public void pinIntermediatePresentInChain() throws Exception {
     HeldCertificate rootCa = new HeldCertificate.Builder()
         .serialNumber(1L)
-        .certificateAuthority(3)
+        .certificateAuthority(1)
         .commonName("root")
         .build();
     HeldCertificate intermediateCa = new HeldCertificate.Builder()
         .issuedBy(rootCa)
-        .certificateAuthority(2)
+        .certificateAuthority(0)
         .serialNumber(2L)
         .commonName("intermediate_ca")
         .build();
@@ -130,19 +131,20 @@ public final class CertificatePinnerChainValidationTest {
     CertificatePinner certificatePinner = new CertificatePinner.Builder()
         .add(server.getHostName(), CertificatePinner.pin(intermediateCa.certificate()))
         .build();
-    TlsNode tlsNode = new TlsNode.Builder()
+    HandshakeCertificates handshakeCertificates = new HandshakeCertificates.Builder()
         .addTrustedCertificate(rootCa.certificate())
         .build();
     OkHttpClient client = defaultClient().newBuilder()
-        .sslSocketFactory(tlsNode.sslSocketFactory(), tlsNode.trustManager())
+        .sslSocketFactory(
+            handshakeCertificates.sslSocketFactory(), handshakeCertificates.trustManager())
         .hostnameVerifier(new RecordingHostnameVerifier())
         .certificatePinner(certificatePinner)
         .build();
 
-    TlsNode serverTlsNode = new TlsNode.Builder()
+    HandshakeCertificates serverHandshakeCertificates = new HandshakeCertificates.Builder()
         .heldCertificate(certificate, intermediateCa.certificate())
         .build();
-    server.useHttps(serverTlsNode.sslSocketFactory(), false);
+    server.useHttps(serverHandshakeCertificates.sslSocketFactory(), false);
 
     // The request should complete successfully.
     server.enqueue(new MockResponse()
@@ -174,7 +176,7 @@ public final class CertificatePinnerChainValidationTest {
     // Start with a trusted root CA certificate.
     HeldCertificate rootCa = new HeldCertificate.Builder()
         .serialNumber(1L)
-        .certificateAuthority(3)
+        .certificateAuthority(1)
         .commonName("root")
         .build();
 
@@ -183,7 +185,7 @@ public final class CertificatePinnerChainValidationTest {
     // certificate.
     HeldCertificate goodIntermediateCa = new HeldCertificate.Builder()
         .issuedBy(rootCa)
-        .certificateAuthority(2)
+        .certificateAuthority(0)
         .serialNumber(2L)
         .commonName("good_intermediate_ca")
         .build();
@@ -195,12 +197,12 @@ public final class CertificatePinnerChainValidationTest {
     CertificatePinner certificatePinner = new CertificatePinner.Builder()
         .add(server.getHostName(), CertificatePinner.pin(goodCertificate.certificate()))
         .build();
-    TlsNode tlsNode = new TlsNode.Builder()
+    HandshakeCertificates handshakeCertificates = new HandshakeCertificates.Builder()
         .addTrustedCertificate(rootCa.certificate())
         .build();
     OkHttpClient client = defaultClient().newBuilder()
-        .sslSocketFactory(tlsNode.sslSocketFactory(),
-            tlsNode.trustManager())
+        .sslSocketFactory(
+            handshakeCertificates.sslSocketFactory(), handshakeCertificates.trustManager())
         .hostnameVerifier(new RecordingHostnameVerifier())
         .certificatePinner(certificatePinner)
         .build();
@@ -211,7 +213,7 @@ public final class CertificatePinnerChainValidationTest {
     // chain, we may trick the certificate pinner into accepting the rouge certificate.
     HeldCertificate compromisedIntermediateCa = new HeldCertificate.Builder()
         .issuedBy(rootCa)
-        .certificateAuthority(2)
+        .certificateAuthority(0)
         .serialNumber(4L)
         .commonName("bad_intermediate_ca")
         .build();
@@ -249,12 +251,12 @@ public final class CertificatePinnerChainValidationTest {
     // Start with two root CA certificates, one is good and the other is compromised.
     HeldCertificate rootCa = new HeldCertificate.Builder()
         .serialNumber(1L)
-        .certificateAuthority(3)
+        .certificateAuthority(1)
         .commonName("root")
         .build();
     HeldCertificate compromisedRootCa = new HeldCertificate.Builder()
         .serialNumber(2L)
-        .certificateAuthority(3)
+        .certificateAuthority(1)
         .commonName("compromised_root")
         .build();
 
@@ -263,19 +265,20 @@ public final class CertificatePinnerChainValidationTest {
     // certificate.
     HeldCertificate goodIntermediateCa = new HeldCertificate.Builder()
         .issuedBy(rootCa)
-        .certificateAuthority(2)
+        .certificateAuthority(0)
         .serialNumber(3L)
         .commonName("intermediate_ca")
         .build();
     CertificatePinner certificatePinner = new CertificatePinner.Builder()
         .add(server.getHostName(), CertificatePinner.pin(goodIntermediateCa.certificate()))
         .build();
-    TlsNode tlsNode = new TlsNode.Builder()
+    HandshakeCertificates handshakeCertificates = new HandshakeCertificates.Builder()
         .addTrustedCertificate(rootCa.certificate())
         .addTrustedCertificate(compromisedRootCa.certificate())
         .build();
     OkHttpClient client = defaultClient().newBuilder()
-        .sslSocketFactory(tlsNode.sslSocketFactory(), tlsNode.trustManager())
+        .sslSocketFactory(
+            handshakeCertificates.sslSocketFactory(), handshakeCertificates.trustManager())
         .hostnameVerifier(new RecordingHostnameVerifier())
         .certificatePinner(certificatePinner)
         .build();
@@ -286,7 +289,7 @@ public final class CertificatePinnerChainValidationTest {
     // different set of certificates than the SSL verifier.
     HeldCertificate compromisedIntermediateCa = new HeldCertificate.Builder()
         .issuedBy(compromisedRootCa)
-        .certificateAuthority(2)
+        .certificateAuthority(0)
         .serialNumber(4L)
         .commonName("intermediate_ca")
         .build();

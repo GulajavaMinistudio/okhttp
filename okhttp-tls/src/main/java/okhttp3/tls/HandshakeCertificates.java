@@ -16,6 +16,7 @@
 package okhttp3.tls;
 
 import java.security.GeneralSecurityException;
+import java.security.KeyManagementException;
 import java.security.SecureRandom;
 import java.security.cert.X509Certificate;
 import java.util.ArrayList;
@@ -43,15 +44,15 @@ import static okhttp3.tls.internal.TlsUtil.newTrustManager;
  * <p>To perform server authentication:
  *
  * <ul>
- *   <li>The server's TLS node must have a {@linkplain HeldCertificate held certificate} (a
- *       certificate and its private key). The certificate's subject alternative names must match
- *       the server's hostname. The server must also have is a (possibly-empty) chain of
- *       intermediate certificates to establish trust from a root certificate to the server's
- *       certificate. The root certificate is not included in this chain.
- *   <li>The client's TLS node must include a set of trusted root certificates. They will be used to
- *       authenticate the server's certificate chain. Typically this is a set of well-known root
- *       certificates that is distributed with the HTTP client or its platform. It may be augmented
- *       by certificates private to an organization or service.
+ *   <li>The server's handshake certificates must have a {@linkplain HeldCertificate held
+ *       certificate} (a certificate and its private key). The certificate's subject alternative
+ *       names must match the server's hostname. The server must also have is a (possibly-empty)
+ *       chain of intermediate certificates to establish trust from a root certificate to the
+ *       server's certificate. The root certificate is not included in this chain.
+ *   <li>The client's handshake certificates must include a set of trusted root certificates. They
+ *       will be used to authenticate the server's certificate chain. Typically this is a set of
+ *       well-known root certificates that is distributed with the HTTP client or its platform. It
+ *       may be augmented by certificates private to an organization or service.
  * </ul>
  *
  * <h3>Client Authentication</h3>
@@ -62,38 +63,50 @@ import static okhttp3.tls.internal.TlsUtil.newTrustManager;
  * <p>To perform client authentication:
  *
  * <ul>
- *   <li>The client's TLS node must have a {@linkplain HeldCertificate held certificate} (a
- *       certificate and its private key). The client must also have a (possibly-empty) chain of
- *       intermediate certificates to establish trust from a root certificate to the client's
- *       certificate. The root certificate is not included in this chain.
- *   <li>The server's TLS node must include a set of trusted root certificates. They will be used to
- *       authenticate the client's certificate chain. Typically this is not the same set of root
- *       certificates used in server authentication. Instead it will be a small set of roots
- *       private to an organization or service.
+ *   <li>The client's handshake certificates must have a {@linkplain HeldCertificate held
+ *       certificate} (a certificate and its private key). The client must also have a
+ *       (possibly-empty) chain of intermediate certificates to establish trust from a root
+ *       certificate to the client's certificate. The root certificate is not included in this
+ *       chain.
+ *   <li>The server's handshake certificates must include a set of trusted root certificates. They
+ *       will be used to authenticate the client's certificate chain. Typically this is not the same
+ *       set of root certificates used in server authentication. Instead it will be a small set of
+ *       roots private to an organization or service.
  * </ul>
  */
-public final class TlsNode {
-  private final SSLContext sslContext;
+public final class HandshakeCertificates {
+  private final X509KeyManager keyManager;
   private final X509TrustManager trustManager;
 
-  private TlsNode(SSLContext sslContext, X509TrustManager trustManager) {
-    this.sslContext = sslContext;
+  private HandshakeCertificates(X509KeyManager keyManager, X509TrustManager trustManager) {
+    this.keyManager = keyManager;
     this.trustManager = trustManager;
   }
 
-  public SSLSocketFactory sslSocketFactory() {
-    return sslContext.getSocketFactory();
+  public X509KeyManager keyManager() {
+    return keyManager;
   }
 
   public X509TrustManager trustManager() {
     return trustManager;
   }
 
-  public SSLContext sslContext() {
-    return sslContext;
+  public SSLSocketFactory sslSocketFactory() {
+    return sslContext().getSocketFactory();
   }
 
-  public static class Builder {
+  public SSLContext sslContext() {
+    try {
+      SSLContext sslContext = Platform.get().getSSLContext();
+      sslContext.init(new KeyManager[] { keyManager }, new TrustManager[] { trustManager },
+          new SecureRandom());
+      return sslContext;
+    } catch (KeyManagementException e) {
+      throw new AssertionError(e);
+    }
+  }
+
+  public static final class Builder {
     private HeldCertificate heldCertificate;
     private X509Certificate[] intermediates;
 
@@ -101,8 +114,8 @@ public final class TlsNode {
 
     /**
      * Configure the certificate chain to use when being authenticated. The first certificate is
-     * the nodes' certificate, further certificates are included in the handshake so the peer
-     * can build a trusted path to a trusted root certificate.
+     * the held certificate, further certificates are included in the handshake so the peer can
+     * build a trusted path to a trusted root certificate.
      *
      * <p>The chain should include all intermediate certificates but does not need the root
      * certificate that we expect to be known by the remote peer. The peer already has that
@@ -124,16 +137,11 @@ public final class TlsNode {
       return this;
     }
 
-    public TlsNode build() {
+    public HandshakeCertificates build() {
       try {
         X509KeyManager keyManager = newKeyManager(null, heldCertificate, intermediates);
         X509TrustManager trustManager = newTrustManager(null, trustedCertificates);
-
-        SSLContext sslContext = Platform.get().getSSLContext();
-        sslContext.init(new KeyManager[] { keyManager }, new TrustManager[] { trustManager },
-            new SecureRandom());
-
-        return new TlsNode(sslContext, trustManager);
+        return new HandshakeCertificates(keyManager, trustManager);
       } catch (GeneralSecurityException gse) {
         throw new AssertionError(gse);
       }
