@@ -22,6 +22,7 @@ import java.security.cert.X509Certificate;
 import java.util.Arrays;
 import javax.net.ssl.KeyManager;
 import javax.net.ssl.SSLContext;
+import javax.net.ssl.SSLException;
 import javax.net.ssl.SSLHandshakeException;
 import javax.net.ssl.SSLPeerUnverifiedException;
 import javax.net.ssl.SSLSocketFactory;
@@ -46,6 +47,7 @@ import static okhttp3.internal.platform.PlatformTest.getPlatform;
 import static okhttp3.tls.internal.TlsUtil.newKeyManager;
 import static okhttp3.tls.internal.TlsUtil.newTrustManager;
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
 public final class ClientAuthTest {
@@ -67,7 +69,7 @@ public final class ClientAuthTest {
         .addSubjectAlternativeName("root_ca.com")
         .build();
     serverIntermediateCa = new HeldCertificate.Builder()
-        .issuedBy(serverRootCa)
+        .signedBy(serverRootCa)
         .certificateAuthority(0)
         .serialNumber(2L)
         .commonName("intermediate_ca")
@@ -75,7 +77,7 @@ public final class ClientAuthTest {
         .build();
 
     serverCert = new HeldCertificate.Builder()
-        .issuedBy(serverIntermediateCa)
+        .signedBy(serverIntermediateCa)
         .serialNumber(3L)
         .commonName("Local Host")
         .addSubjectAlternativeName(server.getHostName())
@@ -88,7 +90,7 @@ public final class ClientAuthTest {
         .addSubjectAlternativeName("root_ca.com")
         .build();
     clientIntermediateCa = new HeldCertificate.Builder()
-        .issuedBy(serverRootCa)
+        .signedBy(serverRootCa)
         .certificateAuthority(0)
         .serialNumber(2L)
         .commonName("intermediate_ca")
@@ -96,7 +98,7 @@ public final class ClientAuthTest {
         .build();
 
     clientCert = new HeldCertificate.Builder()
-        .issuedBy(clientIntermediateCa)
+        .signedBy(clientIntermediateCa)
         .serialNumber(4L)
         .commonName("Jethro Willis")
         .addSubjectAlternativeName("jethrowillis.com")
@@ -181,6 +183,9 @@ public final class ClientAuthTest {
       call.execute();
       fail();
     } catch (SSLHandshakeException expected) {
+    } catch (SSLException expected) {
+      String jvmVersion = System.getProperty("java.specification.version");
+      assertEquals("11", jvmVersion);
     } catch (SocketException expected) {
       assertEquals("jdk9", getPlatform());
     }
@@ -188,7 +193,7 @@ public final class ClientAuthTest {
 
   @Test public void commonNameIsNotTrusted() throws Exception {
     serverCert = new HeldCertificate.Builder()
-        .issuedBy(serverIntermediateCa)
+        .signedBy(serverIntermediateCa)
         .serialNumber(3L)
         .commonName(server.getHostName())
         .addSubjectAlternativeName("different-host.com")
@@ -229,6 +234,10 @@ public final class ClientAuthTest {
       call.execute();
       fail();
     } catch (SSLHandshakeException expected) {
+    } catch (SSLException expected) {
+      // javax.net.ssl.SSLException: readRecord
+      String jvmVersion = System.getProperty("java.specification.version");
+      assertEquals("11", jvmVersion);
     } catch (SocketException expected) {
       assertEquals("jdk9", getPlatform());
     }
