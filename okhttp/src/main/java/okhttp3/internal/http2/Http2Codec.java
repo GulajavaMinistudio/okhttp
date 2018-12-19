@@ -31,7 +31,6 @@ import okhttp3.ResponseBody;
 import okhttp3.internal.Internal;
 import okhttp3.internal.Util;
 import okhttp3.internal.connection.StreamAllocation;
-import okhttp3.internal.duplex.HeadersListener;
 import okhttp3.internal.http.HttpCodec;
 import okhttp3.internal.http.HttpHeaders;
 import okhttp3.internal.http.RealResponseBody;
@@ -126,11 +125,6 @@ public final class Http2Codec implements HttpCodec {
     stream.writeHeaders(headers, true);
   }
 
-  public void setHeadersListener(HeadersListener headersListener) {
-    if (stream == null) throw new IllegalStateException("stream == null");
-    stream.setHeadersListener(headersListener);
-  }
-
   @Override public void flushRequest() throws IOException {
     connection.flush();
   }
@@ -162,7 +156,8 @@ public final class Http2Codec implements HttpCodec {
     for (int i = 0, size = headers.size(); i < size; i++) {
       // header names must be lowercase.
       ByteString name = ByteString.encodeUtf8(headers.name(i).toLowerCase(Locale.US));
-      if (!HTTP_2_SKIPPED_REQUEST_HEADERS.contains(name.utf8())) {
+      if (!HTTP_2_SKIPPED_REQUEST_HEADERS.contains(name.utf8())
+          || name.utf8().equals(TE) && headers.value(i).equals("trailers")) {
         result.add(new Header(name, headers.value(i)));
       }
     }
@@ -198,6 +193,10 @@ public final class Http2Codec implements HttpCodec {
     long contentLength = HttpHeaders.contentLength(response);
     Source source = new StreamFinishingSource(stream.getSource());
     return new RealResponseBody(contentType, contentLength, Okio.buffer(source));
+  }
+
+  @Override public Headers trailers() throws IOException {
+    return stream.trailers();
   }
 
   @Override public void cancel() {
