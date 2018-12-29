@@ -149,7 +149,9 @@ public final class HttpOverHttp2Test {
     http2Logger.removeHandler(http2Handler);
     http2Logger.setLevel(previousLevel);
 
+    // Ensure a fresh connection pool for the next test.
     client.connectionPool().evictAll();
+    assertEquals(0, client.connectionPool().connectionCount());
   }
 
   @Test public void get() throws Exception {
@@ -752,13 +754,7 @@ public final class HttpOverHttp2Test {
     cookieJar.assertResponseCookies("a=b; path=/");
   }
 
-  /** https://github.com/square/okhttp/issues/1191 */
-  @Ignore // TODO: recover gracefully when a connection is shutdown.
   @Test public void cancelWithStreamNotCompleted() throws Exception {
-    // Ensure that the (shared) connection pool is in a consistent state.
-    client.connectionPool().evictAll();
-    assertEquals(0, client.connectionPool().connectionCount());
-
     server.enqueue(new MockResponse()
         .setBody("abc"));
     server.enqueue(new MockResponse()
@@ -1342,9 +1338,6 @@ public final class HttpOverHttp2Test {
     assumeTrue(protocol == Protocol.HTTP_2);
 
     server.useHttps(handshakeCertificates.sslSocketFactory(), true);
-
-    // Force a fresh connection pool for the test.
-    client.connectionPool().evictAll();
 
     final QueueDispatcher queueDispatcher = new QueueDispatcher();
     queueDispatcher.enqueueResponse(new MockResponse()
