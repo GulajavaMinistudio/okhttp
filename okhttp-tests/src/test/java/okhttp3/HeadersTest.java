@@ -36,9 +36,8 @@ import static java.util.Collections.singletonList;
 import static java.util.Collections.singletonMap;
 import static okhttp3.TestUtil.headerEntries;
 import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertNull;
-import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
 public final class HeadersTest {
@@ -206,7 +205,7 @@ public final class HeadersTest {
 
   @Test public void ofMapThrowsOnNull() {
     try {
-      Headers.of(Collections.<String, String>singletonMap("User-Agent", null));
+      Headers.of(Collections.singletonMap("User-Agent", null));
       fail();
     } catch (IllegalArgumentException expected) {
     }
@@ -398,7 +397,7 @@ public final class HeadersTest {
         .add("Connection", "close")
         .add("Transfer-Encoding", "chunked")
         .build();
-    assertTrue(headers1.equals(headers2));
+    assertEquals(headers1, headers2);
     assertEquals(headers1.hashCode(), headers2.hashCode());
   }
 
@@ -411,8 +410,8 @@ public final class HeadersTest {
         .add("Connection", "keep-alive")
         .add("Transfer-Encoding", "chunked")
         .build();
-    assertFalse(headers1.equals(headers2));
-    assertFalse(headers1.hashCode() == headers2.hashCode());
+    assertNotEquals(headers1, headers2);
+    assertNotEquals(headers1.hashCode(), headers2.hashCode());
   }
 
   @Test public void headersToString() {
@@ -649,7 +648,7 @@ public final class HeadersTest {
         .build();
     assertEquals(Arrays.asList(
         new Challenge("Basic", singletonMap("realm", "myrealm")),
-        new Challenge("Digest", Collections.<String, String>emptyMap())),
+        new Challenge("Digest", Collections.emptyMap())),
         HttpHeaders.parseChallenges(headers, "WWW-Authenticate"));
   }
 
@@ -668,7 +667,7 @@ public final class HeadersTest {
         .add("WWW-Authenticate", "Digest, Basic ,,realm=\"myrealm\"")
         .build();
     assertEquals(Arrays.asList(
-        new Challenge("Digest", Collections.<String, String>emptyMap()),
+        new Challenge("Digest", Collections.emptyMap()),
         new Challenge("Basic", singletonMap("realm", "myrealm"))),
         HttpHeaders.parseChallenges(headers, "WWW-Authenticate"));
   }
@@ -678,7 +677,7 @@ public final class HeadersTest {
         .add("WWW-Authenticate", "Digest,Basic realm=\"myrealm\"")
         .build();
     assertEquals(Arrays.asList(
-        new Challenge("Digest", Collections.<String, String>emptyMap()),
+        new Challenge("Digest", Collections.emptyMap()),
         new Challenge("Basic", singletonMap("realm", "myrealm"))),
         HttpHeaders.parseChallenges(headers, "WWW-Authenticate"));
   }
@@ -688,7 +687,7 @@ public final class HeadersTest {
         .add("WWW-Authenticate", "Digest,,,, Basic ,,realm=\"myrealm\"")
         .build();
     assertEquals(Arrays.asList(
-        new Challenge("Digest", Collections.<String, String>emptyMap()),
+        new Challenge("Digest", Collections.emptyMap()),
         new Challenge("Basic", singletonMap("realm", "myrealm"))),
         HttpHeaders.parseChallenges(headers, "WWW-Authenticate"));
   }
@@ -702,7 +701,7 @@ public final class HeadersTest {
     expectedAuthParams.put("realm", "myrealm");
     expectedAuthParams.put("foo", "bar");
     assertEquals(Arrays.asList(
-        new Challenge("Digest", Collections.<String, String>emptyMap()),
+        new Challenge("Digest", Collections.emptyMap()),
         new Challenge("Basic", expectedAuthParams)),
         HttpHeaders.parseChallenges(headers, "WWW-Authenticate"));
   }
@@ -713,7 +712,7 @@ public final class HeadersTest {
         .build();
 
     assertEquals(Arrays.asList(
-        new Challenge("Digest", Collections.<String, String>emptyMap()),
+        new Challenge("Digest", Collections.emptyMap()),
         new Challenge("Basic", singletonMap("realm", "my\\\"realm"))),
         HttpHeaders.parseChallenges(headers, "WWW-Authenticate"));
   }
@@ -724,7 +723,7 @@ public final class HeadersTest {
         .build();
 
     assertEquals(Arrays.asList(
-        new Challenge("Digest", Collections.<String, String>emptyMap()),
+        new Challenge("Digest", Collections.emptyMap()),
         new Challenge("Basic", singletonMap("realm", "my, realm,"))),
         HttpHeaders.parseChallenges(headers, "WWW-Authenticate"));
   }
@@ -735,7 +734,7 @@ public final class HeadersTest {
         .build();
 
     assertEquals(Arrays.asList(
-        new Challenge("Digest", Collections.<String, String>emptyMap())),
+        new Challenge("Digest", Collections.emptyMap())),
         HttpHeaders.parseChallenges(headers, "WWW-Authenticate"));
   }
 
@@ -745,7 +744,7 @@ public final class HeadersTest {
         .build();
 
     assertEquals(Arrays.asList(
-        new Challenge("Digest", Collections.<String, String>emptyMap())),
+        new Challenge("Digest", Collections.emptyMap())),
         HttpHeaders.parseChallenges(headers, "WWW-Authenticate"));
   }
 
@@ -756,7 +755,7 @@ public final class HeadersTest {
         .build();
 
     assertEquals(Arrays.asList(
-        new Challenge("Digest", Collections.<String, String>emptyMap())),
+        new Challenge("Digest", Collections.emptyMap())),
         HttpHeaders.parseChallenges(headers, "WWW-Authenticate"));
   }
 
@@ -766,7 +765,7 @@ public final class HeadersTest {
         .build();
 
     assertEquals(singletonList(
-        new Challenge("Other", singletonMap(((String) null), "abc=="))),
+        new Challenge("Other", singletonMap(null, "abc=="))),
         HttpHeaders.parseChallenges(headers, "WWW-Authenticate"));
   }
 
@@ -776,7 +775,7 @@ public final class HeadersTest {
         .build();
 
     assertEquals(Arrays.asList(
-        new Challenge("Other", singletonMap((String) null, "abc=="))),
+        new Challenge("Other", singletonMap(null, "abc=="))),
         HttpHeaders.parseChallenges(headers, "WWW-Authenticate"));
   }
 
@@ -795,7 +794,7 @@ public final class HeadersTest {
         .build();
 
     assertEquals(Arrays.asList(
-        new Challenge("Digest", Collections.<String, String>emptyMap()),
+        new Challenge("Digest", Collections.emptyMap()),
         new Challenge("Basic", singletonMap("realm", "myrealm"))),
         HttpHeaders.parseChallenges(headers, "WWW-Authenticate"));
   }
@@ -808,7 +807,7 @@ public final class HeadersTest {
 
     assertEquals(Arrays.asList(
         new Challenge("Basic", singletonMap("realm", "myrealm")),
-        new Challenge("Digest", Collections.<String, String>emptyMap())),
+        new Challenge("Digest", Collections.emptyMap())),
         HttpHeaders.parseChallenges(headers, "WWW-Authenticate"));
   }
 

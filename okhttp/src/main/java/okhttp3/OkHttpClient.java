@@ -52,7 +52,6 @@ import okio.Sink;
 import okio.Source;
 import org.codehaus.mojo.animal_sniffer.IgnoreJRERequirement;
 
-import static okhttp3.internal.Util.assertionError;
 import static okhttp3.internal.Util.checkDuration;
 
 /**
@@ -151,16 +150,16 @@ public class OkHttpClient implements Cloneable, Call.Factory, WebSocket.Factory 
         return pool.connectionBecameIdle(connection);
       }
 
-      @Override public RealConnection get(ConnectionPool pool, Address address,
-          StreamAllocation streamAllocation, Route route) {
-        return pool.get(address, streamAllocation, route);
+      @Override public void acquire(ConnectionPool pool, Address address,
+          StreamAllocation streamAllocation, @Nullable Route route) {
+        pool.acquire(address, streamAllocation, route);
       }
 
       @Override public boolean equalsNonHost(Address a, Address b) {
         return a.equalsNonHost(b);
       }
 
-      @Override public Socket deduplicate(
+      @Override public @Nullable Socket deduplicate(
           ConnectionPool pool, Address address, StreamAllocation streamAllocation) {
         return pool.deduplicate(address, streamAllocation);
       }
@@ -312,31 +311,34 @@ public class OkHttpClient implements Cloneable, Call.Factory, WebSocket.Factory 
       sslContext.init(null, new TrustManager[] { trustManager }, null);
       return sslContext.getSocketFactory();
     } catch (GeneralSecurityException e) {
-      throw assertionError("No System TLS", e); // The system has no TLS. Just give up.
+      throw new AssertionError("No System TLS", e); // The system has no TLS. Just give up.
     }
   }
 
-  /** Default call timeout (in milliseconds). */
+  /**
+   * Default call timeout (in milliseconds). By default there is no timeout for complete calls, but
+   * there is for the connect, write, and read actions within a call.
+   */
   public int callTimeoutMillis() {
     return callTimeout;
   }
 
-  /** Default connect timeout (in milliseconds). */
+  /** Default connect timeout (in milliseconds). The default is 10 seconds. */
   public int connectTimeoutMillis() {
     return connectTimeout;
   }
 
-  /** Default read timeout (in milliseconds). */
+  /** Default read timeout (in milliseconds). The default is 10 seconds. */
   public int readTimeoutMillis() {
     return readTimeout;
   }
 
-  /** Default write timeout (in milliseconds). */
+  /** Default write timeout (in milliseconds). The default is 10 seconds. */
   public int writeTimeoutMillis() {
     return writeTimeout;
   }
 
-  /** Web socket ping interval (in milliseconds). */
+  /** Web socket and HTTP/2 ping interval (in milliseconds). By default pings are not sent. */
   public int pingIntervalMillis() {
     return pingInterval;
   }
@@ -357,7 +359,7 @@ public class OkHttpClient implements Cloneable, Call.Factory, WebSocket.Factory 
     return cache;
   }
 
-  InternalCache internalCache() {
+  @Nullable InternalCache internalCache() {
     return cache != null ? cache.internalCache : internalCache;
   }
 
@@ -554,6 +556,8 @@ public class OkHttpClient implements Cloneable, Call.Factory, WebSocket.Factory 
      * <p>The call timeout spans the entire call: resolving DNS, connecting, writing the request
      * body, server processing, and reading the response body. If the call requires redirects or
      * retries all must complete within one timeout period.
+     *
+     * <p>The default value is 0 which imposes no timeout.
      */
     public Builder callTimeout(long timeout, TimeUnit unit) {
       callTimeout = checkDuration("timeout", timeout, unit);
@@ -567,6 +571,8 @@ public class OkHttpClient implements Cloneable, Call.Factory, WebSocket.Factory 
      * <p>The call timeout spans the entire call: resolving DNS, connecting, writing the request
      * body, server processing, and reading the response body. If the call requires redirects or
      * retries all must complete within one timeout period.
+     *
+     * <p>The default value is 0 which imposes no timeout.
      */
     @IgnoreJRERequirement
     public Builder callTimeout(Duration duration) {
