@@ -90,12 +90,12 @@ public final class WebSocketHttpTest {
     WebSocket webSocket = newWebSocket();
 
     clientListener.assertOpen();
-    serverListener.assertOpen();
+    WebSocket server = serverListener.assertOpen();
 
     webSocket.send("Hello, WebSockets!");
     serverListener.assertTextMessage("Hello, WebSockets!");
 
-    // TODO: fix connection leak
+    closeWebSockets(webSocket, server);
   }
 
   @Test public void binaryMessage() {
@@ -103,12 +103,12 @@ public final class WebSocketHttpTest {
     WebSocket webSocket = newWebSocket();
 
     clientListener.assertOpen();
-    serverListener.assertOpen();
+    WebSocket server = serverListener.assertOpen();
 
     webSocket.send(ByteString.encodeUtf8("Hello!"));
     serverListener.assertBinaryMessage(ByteString.of(new byte[] {'H', 'e', 'l', 'l', 'o', '!'}));
 
-    // TODO: fix connection leak
+    closeWebSockets(webSocket, server);
   }
 
   @Test public void nullStringThrows() {
@@ -116,6 +116,7 @@ public final class WebSocketHttpTest {
     WebSocket webSocket = newWebSocket();
 
     clientListener.assertOpen();
+    WebSocket server = serverListener.assertOpen();
     try {
       webSocket.send((String) null);
       fail();
@@ -123,7 +124,7 @@ public final class WebSocketHttpTest {
       assertEquals("text == null", e.getMessage());
     }
 
-    // TODO: fix connection leak
+    closeWebSockets(webSocket, server);
   }
 
   @Test public void nullByteStringThrows() {
@@ -131,6 +132,7 @@ public final class WebSocketHttpTest {
     WebSocket webSocket = newWebSocket();
 
     clientListener.assertOpen();
+    WebSocket server = serverListener.assertOpen();
     try {
       webSocket.send((ByteString) null);
       fail();
@@ -138,12 +140,12 @@ public final class WebSocketHttpTest {
       assertEquals("bytes == null", e.getMessage());
     }
 
-    // TODO: fix connection leak
+    closeWebSockets(webSocket, server);
   }
 
   @Test public void serverMessage() {
     webServer.enqueue(new MockResponse().withWebSocketUpgrade(serverListener));
-    newWebSocket();
+    WebSocket webSocket = newWebSocket();
 
     clientListener.assertOpen();
     WebSocket server = serverListener.assertOpen();
@@ -151,7 +153,7 @@ public final class WebSocketHttpTest {
     server.send("Hello, WebSockets!");
     clientListener.assertTextMessage("Hello, WebSockets!");
 
-    // TODO: fix connection leak
+    closeWebSockets(webSocket, server);
   }
 
   @Test public void throwingOnOpenFailsImmediately() {
@@ -168,8 +170,6 @@ public final class WebSocketHttpTest {
     serverListener.assertOpen();
     serverListener.assertExhausted();
     clientListener.assertFailure(e);
-
-    // TODO: fix connection leak
   }
 
   @Ignore("AsyncCall currently lets runtime exceptions propagate.")
@@ -257,15 +257,10 @@ public final class WebSocketHttpTest {
     webServer.enqueue(new MockResponse().withWebSocketUpgrade(serverListener));
     newWebSocket();
 
-    clientListener.assertOpen();
+    WebSocket webSocket = clientListener.assertOpen();
     WebSocket server = serverListener.assertOpen();
 
-    server.close(1001, "bye");
-    clientListener.assertClosing(1001, "bye");
-    clientListener.assertExhausted();
-    serverListener.assertExhausted();
-
-    // TODO: fix connection leak
+    closeWebSockets(webSocket, server);
   }
 
   @Test public void non101RetainsBody() throws IOException {
@@ -298,7 +293,7 @@ public final class WebSocketHttpTest {
     server.send("def");
     clientListener.assertTextMessage("def");
 
-    // TODO: fix connection leak
+    closeWebSockets(webSocket, server);
   }
 
   @Test public void missingConnectionHeader() throws IOException {
@@ -310,8 +305,6 @@ public final class WebSocketHttpTest {
 
     clientListener.assertFailure(101, null, ProtocolException.class,
         "Expected 'Connection' header value 'Upgrade' but was 'null'");
-
-    // TODO: fix connection leak
   }
 
   @Test public void wrongConnectionHeader() throws IOException {
@@ -324,8 +317,6 @@ public final class WebSocketHttpTest {
 
     clientListener.assertFailure(101, null, ProtocolException.class,
         "Expected 'Connection' header value 'Upgrade' but was 'Downgrade'");
-
-    // TODO: fix connection leak
   }
 
   @Test public void missingUpgradeHeader() throws IOException {
@@ -337,8 +328,6 @@ public final class WebSocketHttpTest {
 
     clientListener.assertFailure(101, null, ProtocolException.class,
         "Expected 'Upgrade' header value 'websocket' but was 'null'");
-
-    // TODO: fix connection leak
   }
 
   @Test public void wrongUpgradeHeader() throws IOException {
@@ -351,8 +340,6 @@ public final class WebSocketHttpTest {
 
     clientListener.assertFailure(101, null, ProtocolException.class,
         "Expected 'Upgrade' header value 'websocket' but was 'Pepsi'");
-
-    // TODO: fix connection leak
   }
 
   @Test public void missingMagicHeader() throws IOException {
@@ -364,8 +351,6 @@ public final class WebSocketHttpTest {
 
     clientListener.assertFailure(101, null, ProtocolException.class,
         "Expected 'Sec-WebSocket-Accept' header value 'ujmZX4KXZqjwy6vi1aQFH5p4Ygk=' but was 'null'");
-
-    // TODO: fix connection leak
   }
 
   @Test public void wrongMagicHeader() throws IOException {
@@ -378,8 +363,6 @@ public final class WebSocketHttpTest {
 
     clientListener.assertFailure(101, null, ProtocolException.class,
         "Expected 'Sec-WebSocket-Accept' header value 'ujmZX4KXZqjwy6vi1aQFH5p4Ygk=' but was 'magic'");
-
-    // TODO: fix connection leak
   }
 
   @Test public void webSocketAndApplicationInterceptors() {
@@ -425,9 +408,8 @@ public final class WebSocketHttpTest {
     webSocket.close(1000, null);
 
     WebSocket server = serverListener.assertOpen();
-    server.close(1000, null);
-    
-    // TODO: fix connection leak
+
+    closeWebSockets(webSocket, server);
   }
 
   @Test public void overflowOutgoingQueue() {
@@ -510,14 +492,10 @@ public final class WebSocketHttpTest {
 
   @Test public void wsScheme() {
     websocketScheme("ws");
-
-    // TODO: fix connection leak
   }
 
   @Test public void wsUppercaseScheme() {
     websocketScheme("WS");
-
-    // TODO: fix connection leak
   }
 
   @Test public void wssScheme() {
@@ -529,8 +507,6 @@ public final class WebSocketHttpTest {
         .build();
 
     websocketScheme("wss");
-
-    // TODO: fix connection leak
   }
 
   @Test public void httpsScheme() {
@@ -542,8 +518,6 @@ public final class WebSocketHttpTest {
         .build();
 
     websocketScheme("https");
-
-    // TODO: fix connection leak
   }
 
   @Test public void readTimeoutAppliesToHttpRequest() {
@@ -580,7 +554,7 @@ public final class WebSocketHttpTest {
 
   @Test public void readTimeoutDoesNotApplyAcrossFrames() throws Exception {
     webServer.enqueue(new MockResponse().withWebSocketUpgrade(serverListener));
-    newWebSocket();
+    WebSocket webSocket = newWebSocket();
 
     clientListener.assertOpen();
     WebSocket server = serverListener.assertOpen();
@@ -591,7 +565,7 @@ public final class WebSocketHttpTest {
     server.send("abc");
     clientListener.assertTextMessage("abc");
 
-    // TODO: fix connection leak
+    closeWebSockets(webSocket, server);
   }
 
   @Test public void clientPingsServerOnInterval() throws Exception {
@@ -622,7 +596,7 @@ public final class WebSocketHttpTest {
     assertEquals(0, server.receivedPongCount());
     assertEquals(0, webSocket.receivedPingCount());
 
-    // TODO: fix connection leak
+    closeWebSockets(webSocket, server);
   }
 
   @Test public void clientDoesNotPingServerByDefault() throws Exception {
@@ -642,7 +616,7 @@ public final class WebSocketHttpTest {
     assertEquals(0, server.receivedPingCount());
     assertEquals(0, server.receivedPongCount());
 
-    // TODO: fix connection leak
+    closeWebSockets(webSocket, server);
   }
 
   /**
@@ -735,7 +709,7 @@ public final class WebSocketHttpTest {
 
     webServer.enqueue(new MockResponse()
         .withWebSocketUpgrade(serverListener));
-    newWebSocket();
+    WebSocket webSocket = newWebSocket();
 
     clientListener.assertOpen();
     WebSocket server = serverListener.assertOpen();
@@ -745,7 +719,7 @@ public final class WebSocketHttpTest {
     server.send("Hello, WebSockets!");
     clientListener.assertTextMessage("Hello, WebSockets!");
 
-   // TODO: fix connection leak
+    closeWebSockets(webSocket, server);
   }
 
   /**
@@ -795,10 +769,12 @@ public final class WebSocketHttpTest {
 
     RealWebSocket webSocket = newWebSocket(request);
     clientListener.assertOpen();
-    serverListener.assertOpen();
+    WebSocket server = serverListener.assertOpen();
 
     webSocket.send("abc");
     serverListener.assertTextMessage("abc");
+
+    closeWebSockets(webSocket, server);
   }
 
   private RealWebSocket newWebSocket() {
@@ -810,5 +786,16 @@ public final class WebSocketHttpTest {
         request, clientListener, random, client.pingIntervalMillis());
     webSocket.connect(client);
     return webSocket;
+  }
+
+  private void closeWebSockets(WebSocket webSocket, WebSocket server) {
+    server.close(1001, "");
+    clientListener.assertClosing(1001, "");
+    webSocket.close(1000, "");
+    serverListener.assertClosing(1000, "");
+    clientListener.assertClosed(1001, "");
+    serverListener.assertClosed(1000, "");
+    clientListener.assertExhausted();
+    serverListener.assertExhausted();
   }
 }
