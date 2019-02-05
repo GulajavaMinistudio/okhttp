@@ -1,9 +1,18 @@
 Change Log
 ==========
 
+## Version 3.13.1
+
+_2019-02-05_
+
+ *  Fix: Don't crash when using a custom `X509TrustManager` or `SSLSocket` on Android. When we
+    removed obsolete code for Android 4.4 we inadvertently also removed support for custom
+    subclasses. We've restored that support!
+
+
 ## Version 3.13.0
 
-_2018-02-04_
+_2019-02-04_
 
  *  **This release bumps our minimum requirements to Java 8+ or Android 5+.** Cutting off old
     devices is a serious change and we don't do it lightly! [This post][require_android_5] explains
@@ -1652,4 +1661,4 @@ Initial release.
  [conscrypt]: https://github.com/google/conscrypt/
  [conscrypt_dependency]: https://github.com/google/conscrypt/#download
  [https_server_sample]: https://github.com/square/okhttp/blob/master/samples/guide/src/main/java/okhttp3/recipes/HttpsServer.java
- [require_android_5]: https://medium.com/square-corner-blog/okhttp-3-13-requires-android-5-XXXXXXXXXXXX
+ [require_android_5]: https://medium.com/square-corner-blog/okhttp-3-13-requires-android-5-818bb78d07ce
