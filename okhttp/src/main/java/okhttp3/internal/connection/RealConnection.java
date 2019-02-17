@@ -40,7 +40,6 @@ import okhttp3.Address;
 import okhttp3.Call;
 import okhttp3.CertificatePinner;
 import okhttp3.Connection;
-import okhttp3.ConnectionPool;
 import okhttp3.ConnectionSpec;
 import okhttp3.EventListener;
 import okhttp3.Handshake;
@@ -79,7 +78,7 @@ public final class RealConnection extends Http2Connection.Listener implements Co
   private static final String NPE_THROW_WITH_NULL = "throw with null exception";
   private static final int MAX_TUNNEL_ATTEMPTS = 21;
 
-  private final ConnectionPool connectionPool;
+  public final RealConnectionPool connectionPool;
   private final Route route;
 
   // The fields below are initialized by connect() and never reassigned.
@@ -100,10 +99,14 @@ public final class RealConnection extends Http2Connection.Listener implements Co
 
   // The fields below track connection state and are guarded by connectionPool.
 
-  /** If true, no new streams can be created on this connection. Once true this is always true. */
+  /**
+   * If true, no new streams can be created on this connection. Once true this is always true.
+   * Guarded by {@link #connectionPool}.
+   */
   public boolean noNewStreams;
 
   public int successCount;
+  public int refusedStreamCount;
 
   /**
    * The maximum number of concurrent streams that can be carried by this connection. If {@code
@@ -117,13 +120,21 @@ public final class RealConnection extends Http2Connection.Listener implements Co
   /** Nanotime timestamp when {@code allocations.size()} reached zero. */
   public long idleAtNanos = Long.MAX_VALUE;
 
-  public RealConnection(ConnectionPool connectionPool, Route route) {
+  public RealConnection(RealConnectionPool connectionPool, Route route) {
     this.connectionPool = connectionPool;
     this.route = route;
   }
 
+  /** Prevent further streams from being created on this connection. */
+  public void noNewStreams() {
+    assert (!Thread.holdsLock(connectionPool));
+    synchronized (connectionPool) {
+      noNewStreams = true;
+    }
+  }
+
   public static RealConnection testConnection(
-      ConnectionPool connectionPool, Route route, Socket socket, long idleAtNanos) {
+      RealConnectionPool connectionPool, Route route, Socket socket, long idleAtNanos) {
     RealConnection result = new RealConnection(connectionPool, route);
     result.socket = socket;
     result.idleAtNanos = idleAtNanos;
@@ -385,15 +396,7 @@ public final class RealConnection extends Http2Connection.Listener implements Co
       Response response = tunnelConnection.readResponseHeaders(false)
           .request(tunnelRequest)
           .build();
-      // The response body from a CONNECT should be empty, but if it is not then we should consume
-      // it before proceeding.
-      long contentLength = HttpHeaders.contentLength(response);
-      if (contentLength == -1L) {
-        contentLength = 0L;
-      }
-      Source body = tunnelConnection.newFixedLengthSource(contentLength);
-      Util.skipAll(body, Integer.MAX_VALUE, TimeUnit.MILLISECONDS);
-      body.close();
+      tunnelConnection.skipConnectBody(response);
 
       switch (response.code()) {
         case HTTP_OK:
@@ -519,22 +522,21 @@ public final class RealConnection extends Http2Connection.Listener implements Co
     return true; // Success. The URL is supported.
   }
 
-  public HttpCodec newCodec(OkHttpClient client, Interceptor.Chain chain,
-      Transmitter transmitter) throws SocketException {
+  public HttpCodec newCodec(OkHttpClient client, Interceptor.Chain chain) throws SocketException {
     if (http2Connection != null) {
-      return new Http2Codec(client, chain, transmitter, http2Connection);
+      return new Http2Codec(client, chain, http2Connection);
     } else {
       socket.setSoTimeout(chain.readTimeoutMillis());
       source.timeout().timeout(chain.readTimeoutMillis(), MILLISECONDS);
       sink.timeout().timeout(chain.writeTimeoutMillis(), MILLISECONDS);
-      return new Http1Codec(client, transmitter, source, sink);
+      return new Http1Codec(client, this, source, sink);
     }
   }
 
   public RealWebSocket.Streams newWebSocketStreams(Transmitter transmitter) {
     return new RealWebSocket.Streams(true, source, sink) {
       @Override public void close() throws IOException {
-        transmitter.streamFinished(true, -1L, null);
+        transmitter.responseBodyComplete(-1L, null);
       }
     };
   }

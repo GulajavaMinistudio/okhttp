@@ -37,12 +37,19 @@ import okhttp3.Response;
 import okhttp3.ResponseBody;
 import okhttp3.Route;
 import okhttp3.internal.connection.RealConnection;
+import okhttp3.internal.connection.RealConnectionPool;
 import okhttp3.internal.connection.StreamAllocation;
 import okhttp3.internal.http.HttpCodec;
+import okhttp3.internal.http.RealResponseBody;
 import okhttp3.internal.ws.RealWebSocket;
 import okio.Buffer;
 import okio.ForwardingSink;
+import okio.ForwardingSource;
+import okio.Okio;
 import okio.Sink;
+import okio.Source;
+
+import static okhttp3.internal.Util.sameConnection;
 
 /**
  * Bridge between OkHttp's application and network layers. This class exposes high-level application
@@ -50,16 +57,19 @@ import okio.Sink;
  */
 public final class Transmitter {
   public final OkHttpClient client;
+  public final RealConnectionPool connectionPool;
   public final Call call;
   public final EventListener eventListener;
 
   private @Nullable Object callStackTrace;
 
+  private Request request;
   private volatile boolean canceled;
   private volatile StreamAllocation streamAllocation;
 
   public Transmitter(OkHttpClient client, Call call) {
     this.client = client;
+    this.connectionPool = Internal.instance.realConnectionPool(client.connectionPool());
     this.call = call;
     this.eventListener = client.eventListenerFactory().create(call);
   }
@@ -68,13 +78,25 @@ public final class Transmitter {
     this.callStackTrace = callStackTrace;
   }
 
-  public void newStreamAllocation(Request request) {
-    newStreamAllocation(createAddress(request.url()));
-  }
+  /**
+   * Prepare to create a stream to carry {@code request}. This prefers to use the existing
+   * connection if it exists.
+   */
+  public void prepareToConnect(Request request) {
+    if (this.request != null) {
+      if (sameConnection(this.request.url(), request.url())) {
+        return; // Already ready.
+      }
+      if (streamAllocation != null) {
+        streamAllocation.transmitterReleaseConnection(false);
+        streamAllocation = null;
+      }
+    }
 
-  public void newStreamAllocation(Address address) {
-    this.streamAllocation = new StreamAllocation(this, client.connectionPool(),
-        address, call, eventListener, callStackTrace);
+    this.request = request;
+    this.streamAllocation = new StreamAllocation(this,
+        Internal.instance.realConnectionPool(client.connectionPool()), createAddress(request.url()),
+        call, eventListener, callStackTrace);
   }
 
   private Address createAddress(HttpUrl url) {
@@ -115,8 +137,8 @@ public final class Transmitter {
     streamAllocation.streamFailed(e);
   }
 
-  public void noNewStreams() {
-    streamAllocation.noNewStreams();
+  public void noNewStreamsOnConnection() {
+    connection().noNewStreams();
   }
 
   public RealWebSocket.Streams newWebSocketStreams() {
@@ -141,8 +163,10 @@ public final class Transmitter {
     return streamAllocation.connection().isMultiplexed();
   }
 
-  public void releaseStreamAllocation(boolean callEnd) {
-    streamAllocation.release(callEnd);
+  public void noMoreStreamsOnCall() {
+    if (streamAllocation != null) {
+      streamAllocation.transmitterReleaseConnection(true);
+    }
   }
 
   public boolean hasMoreRoutes() {
@@ -197,7 +221,12 @@ public final class Transmitter {
 
   public ResponseBody openResponseBody(Response response) throws IOException {
     streamAllocation.eventListener.responseBodyStart(streamAllocation.call);
-    return streamAllocation.codec().openResponseBody(response);
+    String contentType = response.header("Content-Type");
+    HttpCodec codec = streamAllocation.codec();
+    long contentLength = codec.reportedContentLength(response);
+    Source rawSource = codec.openResponseBodySource(response);
+    ResponseBodySource source = new ResponseBodySource(rawSource, contentLength);
+    return new RealResponseBody(contentType, contentLength, Okio.buffer(source));
   }
 
   public DeferredTrailers deferredTrailers() {
@@ -214,8 +243,8 @@ public final class Transmitter {
     return streamAllocation.connection().supportsUrl(url);
   }
 
-  public void acquire(RealConnection connection, boolean reportedAcquired) {
-    streamAllocation.acquire(connection, reportedAcquired);
+  public void acquireConnection(RealConnection connection, boolean reportedAcquired) {
+    streamAllocation.transmitterAcquireConnection(connection, reportedAcquired);
   }
 
   public RealConnection connection() {
@@ -226,33 +255,28 @@ public final class Transmitter {
     return streamAllocation.releaseAndAcquire(newConnection);
   }
 
-  public void streamFinished(boolean noNewStreams, long bytesRead, IOException e) {
+  public void responseBodyComplete(long bytesRead, IOException e) {
     if (streamAllocation != null) {
-      streamAllocation.streamFinished(noNewStreams, streamAllocation.codec(), bytesRead, e);
+      streamAllocation.responseBodyComplete(bytesRead, e);
     }
-  }
-
-  @Override public String toString() {
-    return call.request().url().redact();
   }
 
   /** A request body that fires events when it completes. */
   private final class RequestBodySink extends ForwardingSink {
-    private boolean closed;
-    private long bytesReceived;
-
     /** The exact number of bytes to be written, or -1L if that is unknown. */
-    private long bytesExpected;
+    private long contentLength;
+    private long bytesReceived;
+    private boolean closed;
 
-    RequestBodySink(Sink delegate, long bytesExpected) {
+    RequestBodySink(Sink delegate, long contentLength) {
       super(delegate);
-      this.bytesExpected = bytesExpected;
+      this.contentLength = contentLength;
     }
 
     @Override public void write(Buffer source, long byteCount) throws IOException {
       if (closed) throw new IllegalStateException("closed");
-      if (bytesExpected != -1L && bytesReceived + byteCount > bytesExpected) {
-        throw new ProtocolException("expected " + bytesExpected
+      if (contentLength != -1L && bytesReceived + byteCount > contentLength) {
+        throw new ProtocolException("expected " + contentLength
             + " bytes but received " + (bytesReceived + byteCount));
       }
       super.write(source, byteCount);
@@ -262,11 +286,68 @@ public final class Transmitter {
     @Override public void close() throws IOException {
       if (closed) return;
       closed = true;
-      if (bytesExpected != -1L && bytesReceived != bytesExpected) {
+      if (contentLength != -1L && bytesReceived != contentLength) {
         throw new ProtocolException("unexpected end of stream");
       }
       eventListener.requestBodyEnd(call, bytesReceived);
       super.close();
+    }
+  }
+
+  /** A response body that fires events when it completes. */
+  final class ResponseBodySource extends ForwardingSource {
+    private long contentLength;
+    private long bytesReceived;
+    private boolean completed;
+    private boolean closed;
+
+    ResponseBodySource(Source delegate, long contentLength) {
+      super(delegate);
+      this.contentLength = contentLength;
+
+      if (contentLength == 0L) {
+        complete(null);
+      }
+    }
+
+    @Override public long read(Buffer sink, long byteCount) throws IOException {
+      if (closed) throw new IllegalStateException("closed");
+      try {
+        long read = delegate().read(sink, byteCount);
+        if (read == -1L) {
+          complete(null);
+          return -1L;
+        }
+
+        long newBytesReceived = bytesReceived + read;
+        if (contentLength != -1L && newBytesReceived > contentLength) {
+          throw new ProtocolException("expected " + contentLength
+              + " bytes but received " + newBytesReceived);
+        }
+
+        bytesReceived = newBytesReceived;
+        if (newBytesReceived == contentLength) {
+          complete(null);
+        }
+
+        return read;
+      } catch (IOException e) {
+        complete(e);
+        throw e;
+      }
+    }
+
+    @Override public void close() throws IOException {
+      if (closed) return;
+      closed = true;
+      super.close();
+      complete(null);
+    }
+
+    void complete(IOException e) {
+      if (completed) return;
+      completed = true;
+      responseBodyComplete(bytesReceived, e);
     }
   }
 

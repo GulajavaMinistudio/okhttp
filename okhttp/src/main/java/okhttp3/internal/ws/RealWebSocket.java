@@ -197,12 +197,11 @@ public final class RealWebSocket implements WebSocket, WebSocketReader.FrameCall
         } catch (ProtocolException e) {
           failWebSocket(e, response);
           closeQuietly(response);
-          transmitter.streamFailed(e);
           return;
         }
 
         // Promote the HTTP streams into web socket streams.
-        transmitter.noNewStreams(); // Prevent connection pooling!
+        transmitter.noNewStreamsOnConnection();
         Streams streams = transmitter.newWebSocketStreams();
 
         // Process all web socket messages.
