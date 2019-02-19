@@ -30,7 +30,6 @@ import java.security.cert.Certificate;
 import java.security.cert.X509Certificate;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.TimeUnit;
 import javax.annotation.Nullable;
 import javax.net.ssl.SSLPeerUnverifiedException;
 import javax.net.ssl.SSLSession;
@@ -51,23 +50,22 @@ import okhttp3.Request;
 import okhttp3.Response;
 import okhttp3.Route;
 import okhttp3.internal.Internal;
-import okhttp3.internal.Transmitter;
 import okhttp3.internal.Util;
 import okhttp3.internal.Version;
-import okhttp3.internal.http.HttpCodec;
-import okhttp3.internal.http.HttpHeaders;
-import okhttp3.internal.http1.Http1Codec;
+import okhttp3.internal.http.ExchangeCodec;
+import okhttp3.internal.http1.Http1ExchangeCodec;
+import okhttp3.internal.http2.ConnectionShutdownException;
 import okhttp3.internal.http2.ErrorCode;
-import okhttp3.internal.http2.Http2Codec;
 import okhttp3.internal.http2.Http2Connection;
+import okhttp3.internal.http2.Http2ExchangeCodec;
 import okhttp3.internal.http2.Http2Stream;
+import okhttp3.internal.http2.StreamResetException;
 import okhttp3.internal.platform.Platform;
 import okhttp3.internal.tls.OkHostnameVerifier;
 import okhttp3.internal.ws.RealWebSocket;
 import okio.BufferedSink;
 import okio.BufferedSource;
 import okio.Okio;
-import okio.Source;
 
 import static java.net.HttpURLConnection.HTTP_OK;
 import static java.net.HttpURLConnection.HTTP_PROXY_AUTH;
@@ -100,40 +98,46 @@ public final class RealConnection extends Http2Connection.Listener implements Co
   // The fields below track connection state and are guarded by connectionPool.
 
   /**
-   * If true, no new streams can be created on this connection. Once true this is always true.
+   * If true, no new exchanges can be created on this connection. Once true this is always true.
    * Guarded by {@link #connectionPool}.
    */
-  public boolean noNewStreams;
+  boolean noNewExchanges;
 
-  public int successCount;
-  public int refusedStreamCount;
+  /**
+   * The number of times there was a problem establishing a stream that could be due to route
+   * chosen. Guarded by {@link #connectionPool}.
+   */
+  int routeFailureCount;
+
+  int successCount;
+  private int refusedStreamCount;
 
   /**
    * The maximum number of concurrent streams that can be carried by this connection. If {@code
    * allocations.size() < allocationLimit} then new streams can be created on this connection.
    */
-  public int allocationLimit = 1;
+  private int allocationLimit = 1;
 
   /** Current calls carried by this connection. */
-  public final List<Reference<Transmitter>> transmitters = new ArrayList<>();
+  final List<Reference<Transmitter>> transmitters = new ArrayList<>();
 
   /** Nanotime timestamp when {@code allocations.size()} reached zero. */
-  public long idleAtNanos = Long.MAX_VALUE;
+  long idleAtNanos = Long.MAX_VALUE;
 
   public RealConnection(RealConnectionPool connectionPool, Route route) {
     this.connectionPool = connectionPool;
     this.route = route;
   }
 
-  /** Prevent further streams from being created on this connection. */
-  public void noNewStreams() {
+  /** Prevent further exchanges from being created on this connection. */
+  public void noNewExchanges() {
     assert (!Thread.holdsLock(connectionPool));
     synchronized (connectionPool) {
-      noNewStreams = true;
+      noNewExchanges = true;
     }
   }
 
-  public static RealConnection testConnection(
+  static RealConnection testConnection(
       RealConnectionPool connectionPool, Route route, Socket socket, long idleAtNanos) {
     RealConnection result = new RealConnection(connectionPool, route);
     result.socket = socket;
@@ -388,15 +392,15 @@ public final class RealConnection extends Http2Connection.Listener implements Co
     // Make an SSL Tunnel on the first message pair of each SSL + proxy connection.
     String requestLine = "CONNECT " + Util.hostHeader(url, true) + " HTTP/1.1";
     while (true) {
-      Http1Codec tunnelConnection = new Http1Codec(null, null, source, sink);
+      Http1ExchangeCodec tunnelCodec = new Http1ExchangeCodec(null, null, source, sink);
       source.timeout().timeout(readTimeout, MILLISECONDS);
       sink.timeout().timeout(writeTimeout, MILLISECONDS);
-      tunnelConnection.writeRequest(tunnelRequest.headers(), requestLine);
-      tunnelConnection.finishRequest();
-      Response response = tunnelConnection.readResponseHeaders(false)
+      tunnelCodec.writeRequest(tunnelRequest.headers(), requestLine);
+      tunnelCodec.finishRequest();
+      Response response = tunnelCodec.readResponseHeaders(false)
           .request(tunnelRequest)
           .build();
-      tunnelConnection.skipConnectBody(response);
+      tunnelCodec.skipConnectBody(response);
 
       switch (response.code()) {
         case HTTP_OK:
@@ -466,9 +470,9 @@ public final class RealConnection extends Http2Connection.Listener implements Co
    * Returns true if this connection can carry a stream allocation to {@code address}. If non-null
    * {@code route} is the resolved route for a connection.
    */
-  public boolean isEligible(Address address, @Nullable Route route) {
-    // If this connection is not accepting new streams, we're done.
-    if (transmitters.size() >= allocationLimit || noNewStreams) return false;
+  boolean isEligible(Address address, @Nullable List<Route> routes) {
+    // If this connection is not accepting new exchanges, we're done.
+    if (transmitters.size() >= allocationLimit || noNewExchanges) return false;
 
     // If the non-host fields of the address don't overlap, we're done.
     if (!Internal.instance.equalsNonHost(this.route.address(), address)) return false;
@@ -486,16 +490,11 @@ public final class RealConnection extends Http2Connection.Listener implements Co
     // 1. This connection must be HTTP/2.
     if (http2Connection == null) return false;
 
-    // 2. The routes must share an IP address. This requires us to have a DNS address for both
-    // hosts, which only happens after route planning. We can't coalesce connections that use a
-    // proxy, since proxies don't tell us the origin server's IP address.
-    if (route == null) return false;
-    if (route.proxy().type() != Proxy.Type.DIRECT) return false;
-    if (this.route.proxy().type() != Proxy.Type.DIRECT) return false;
-    if (!this.route.socketAddress().equals(route.socketAddress())) return false;
+    // 2. The routes must share an IP address.
+    if (routes == null || !routeMatchesAny(routes)) return false;
 
     // 3. This connection's server certificate's must cover the new host.
-    if (route.address().hostnameVerifier() != OkHostnameVerifier.INSTANCE) return false;
+    if (address.hostnameVerifier() != OkHostnameVerifier.INSTANCE) return false;
     if (!supportsUrl(address.url())) return false;
 
     // 4. Certificate pinning must match the host.
@@ -506,6 +505,24 @@ public final class RealConnection extends Http2Connection.Listener implements Co
     }
 
     return true; // The caller's address can be carried by this connection.
+  }
+
+  /**
+   * Returns true if this connection's route has the same address as any of {@code routes}. This
+   * requires us to have a DNS address for both hosts, which only happens after route planning. We
+   * can't coalesce connections that use a proxy, since proxies don't tell us the origin server's IP
+   * address.
+   */
+  private boolean routeMatchesAny(List<Route> candidates) {
+    for (int i = 0, size = candidates.size(); i < size; i++) {
+      Route candidate = candidates.get(i);
+      if (candidate.proxy().type() == Proxy.Type.DIRECT
+          && route.proxy().type() == Proxy.Type.DIRECT
+          && route.socketAddress().equals(candidate.socketAddress())) {
+        return true;
+      }
+    }
+    return false;
   }
 
   public boolean supportsUrl(HttpUrl url) {
@@ -522,21 +539,23 @@ public final class RealConnection extends Http2Connection.Listener implements Co
     return true; // Success. The URL is supported.
   }
 
-  public HttpCodec newCodec(OkHttpClient client, Interceptor.Chain chain) throws SocketException {
+  ExchangeCodec newCodec(OkHttpClient client, Interceptor.Chain chain) throws SocketException {
     if (http2Connection != null) {
-      return new Http2Codec(client, chain, http2Connection);
+      return new Http2ExchangeCodec(client, this, chain, http2Connection);
     } else {
       socket.setSoTimeout(chain.readTimeoutMillis());
       source.timeout().timeout(chain.readTimeoutMillis(), MILLISECONDS);
       sink.timeout().timeout(chain.writeTimeoutMillis(), MILLISECONDS);
-      return new Http1Codec(client, this, source, sink);
+      return new Http1ExchangeCodec(client, this, source, sink);
     }
   }
 
-  public RealWebSocket.Streams newWebSocketStreams(Transmitter transmitter) {
+  RealWebSocket.Streams newWebSocketStreams(Exchange exchange) throws SocketException {
+    socket.setSoTimeout(0);
+    noNewExchanges();
     return new RealWebSocket.Streams(true, source, sink) {
       @Override public void close() throws IOException {
-        transmitter.responseBodyComplete(-1L, null);
+        exchange.responseBodyComplete(-1L, null);
       }
     };
   }
@@ -608,6 +627,41 @@ public final class RealConnection extends Http2Connection.Listener implements Co
    */
   public boolean isMultiplexed() {
     return http2Connection != null;
+  }
+
+  /**
+   * Track a failure using this connection. This may prevent both the connection and its route from
+   * being used for future exchanges.
+   */
+  void trackFailure(@Nullable IOException e) {
+    assert (!Thread.holdsLock(connectionPool));
+    synchronized (connectionPool) {
+      if (e instanceof StreamResetException) {
+        ErrorCode errorCode = ((StreamResetException) e).errorCode;
+        if (errorCode == ErrorCode.REFUSED_STREAM) {
+          // Retry REFUSED_STREAM errors once on the same connection.
+          refusedStreamCount++;
+          if (refusedStreamCount > 1) {
+            noNewExchanges = true;
+            routeFailureCount++;
+          }
+        } else if (errorCode != ErrorCode.CANCEL) {
+          // Keep the connection for CANCEL errors. Everything else wants a fresh connection.
+          noNewExchanges = true;
+          routeFailureCount++;
+        }
+      } else if (!isMultiplexed() || e instanceof ConnectionShutdownException) {
+        noNewExchanges = true;
+
+        // If this route hasn't completed a call, avoid it for new connections.
+        if (successCount == 0) {
+          if (e != null) {
+            connectionPool.connectFailed(route, e);
+          }
+          routeFailureCount++;
+        }
+      }
+    }
   }
 
   @Override public Protocol protocol() {

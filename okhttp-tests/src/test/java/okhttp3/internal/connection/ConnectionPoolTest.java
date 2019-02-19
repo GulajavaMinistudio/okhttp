@@ -31,7 +31,6 @@ import okhttp3.Request;
 import okhttp3.Route;
 import okhttp3.internal.Internal;
 import okhttp3.internal.RecordingOkAuthenticator;
-import okhttp3.internal.Transmitter;
 import org.junit.Test;
 
 import static okhttp3.TestUtil.awaitGarbageCollection;
@@ -96,7 +95,7 @@ public final class ConnectionPoolTest {
       Call call = client.newCall(newRequest(addressA));
       Transmitter transmitter = new Transmitter(client, call);
       transmitter.prepareToConnect(call.request());
-      transmitter.acquireConnection(c1, true);
+      transmitter.acquireConnectionNoEvents(c1);
     }
 
     // Running at time 50, the pool returns that nothing can be evicted until time 150.
@@ -183,7 +182,7 @@ public final class ConnectionPoolTest {
     assertEquals(0L, pool.cleanup(100L));
     assertEquals(Collections.emptyList(), c1.transmitters);
 
-    assertTrue(c1.noNewStreams); // Can't allocate once a leak has been detected.
+    assertTrue(c1.noNewExchanges); // Can't allocate once a leak has been detected.
   }
 
   /** Use a helper method so there's no hidden reference remaining on the stack. */
@@ -195,7 +194,7 @@ public final class ConnectionPoolTest {
       Call call = client.newCall(newRequest(connection.route().address()));
       Transmitter transmitter = new Transmitter(client, call);
       transmitter.prepareToConnect(call.request());
-      transmitter.acquireConnection(connection, true);
+      transmitter.acquireConnectionNoEvents(connection);
     }
   }
 

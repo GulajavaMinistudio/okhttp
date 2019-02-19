@@ -16,8 +16,9 @@
  */
 package okhttp3.internal.connection;
 
+import java.io.IOException;
 import java.lang.ref.Reference;
-import java.net.Socket;
+import java.net.Proxy;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Deque;
@@ -30,9 +31,8 @@ import java.util.concurrent.TimeUnit;
 import javax.annotation.Nullable;
 import okhttp3.Address;
 import okhttp3.Route;
-import okhttp3.internal.Transmitter;
-import okhttp3.internal.Transmitter.TransmitterReference;
 import okhttp3.internal.Util;
+import okhttp3.internal.connection.Transmitter.TransmitterReference;
 import okhttp3.internal.platform.Platform;
 
 import static okhttp3.internal.Util.closeQuietly;
@@ -94,36 +94,23 @@ public final class RealConnectionPool {
   }
 
   /**
-   * Attempts to acquire a recycled connection to {@code address} for {@code transmitter}. If
-   * non-null {@code route} is the resolved route for a connection. Returns true if a connection was
-   * acquired.
+   * Attempts to acquire a recycled connection to {@code address} for {@code transmitter}. Returns
+   * true if a connection was acquired.
+   *
+   * <p>If {@code routes} is non-null these are the resolved routes (ie. IP addresses) for the
+   * connection. This is used to coalesce related domains to the same HTTP/2 connection, such as
+   * {@code square.com} and {@code square.ca}.
    */
-  boolean transmitterAcquirePooledConnection(
-      Address address, Transmitter transmitter, @Nullable Route route) {
+  boolean transmitterAcquirePooledConnection(Address address, Transmitter transmitter,
+      @Nullable List<Route> routes, boolean requireMultiplexed) {
     assert (Thread.holdsLock(this));
     for (RealConnection connection : connections) {
-      if (connection.isEligible(address, route)) {
-        transmitter.acquireConnection(connection, true);
-        return true;
-      }
+      if (requireMultiplexed && !connection.isMultiplexed()) continue;
+      if (!connection.isEligible(address, routes)) continue;
+      transmitter.acquireConnectionNoEvents(connection);
+      return true;
     }
     return false;
-  }
-
-  /**
-   * Replaces the connection held by {@code streamAllocation} with a shared connection if possible.
-   * This recovers when multiple multiplexed connections are created concurrently.
-   */
-  @Nullable Socket deduplicate(Address address, Transmitter transmitter) {
-    assert (Thread.holdsLock(this));
-    for (RealConnection connection : connections) {
-      if (connection.isEligible(address, null)
-          && connection.isMultiplexed()
-          && connection != transmitter.connection()) {
-        return transmitter.releaseAndAcquire(connection);
-      }
-    }
-    return null;
   }
 
   void put(RealConnection connection) {
@@ -141,7 +128,7 @@ public final class RealConnectionPool {
    */
   boolean connectionBecameIdle(RealConnection connection) {
     assert (Thread.holdsLock(this));
-    if (connection.noNewStreams || maxIdleConnections == 0) {
+    if (connection.noNewExchanges || maxIdleConnections == 0) {
       connections.remove(connection);
       return true;
     } else {
@@ -156,7 +143,7 @@ public final class RealConnectionPool {
       for (Iterator<RealConnection> i = connections.iterator(); i.hasNext(); ) {
         RealConnection connection = i.next();
         if (connection.transmitters.isEmpty()) {
-          connection.noNewStreams = true;
+          connection.noNewExchanges = true;
           evictedConnections.add(connection);
           i.remove();
         }
@@ -249,7 +236,7 @@ public final class RealConnectionPool {
       Platform.get().logCloseableLeak(message, transmitterRef.callStackTrace);
 
       references.remove(i);
-      connection.noNewStreams = true;
+      connection.noNewExchanges = true;
 
       // If this was the last allocation, the connection is eligible for immediate eviction.
       if (references.isEmpty()) {
@@ -259,5 +246,17 @@ public final class RealConnectionPool {
     }
 
     return references.size();
+  }
+
+  /** Track a bad route in the route database. Other routes will be attempted first. */
+  public void connectFailed(Route failedRoute, IOException failure) {
+    // Tell the proxy selector when we fail to connect on a fresh connection.
+    if (failedRoute.proxy().type() != Proxy.Type.DIRECT) {
+      Address address = failedRoute.address();
+      address.proxySelector().connectFailed(
+          address.url().uri(), failedRoute.proxy().address(), failure);
+    }
+
+    routeDatabase.failed(failedRoute);
   }
 }

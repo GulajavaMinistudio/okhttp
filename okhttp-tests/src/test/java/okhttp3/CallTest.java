@@ -2202,18 +2202,16 @@ public final class CallTest {
   public void cancelWhileRequestHeadersAreSent() throws Exception {
     server.enqueue(new MockResponse().setBody("A"));
 
-    EventListener listener =
-        new EventListener() {
-          @Override
-          public void requestHeadersStart(Call call) {
-            try {
-              // Cancel call from another thread to avoid reentrance.
-              cancelLater(call, 0).join();
-            } catch (InterruptedException e) {
-              throw new AssertionError();
-            }
-          }
-        };
+    EventListener listener = new EventListener() {
+      @Override public void requestHeadersStart(Call call) {
+        try {
+          // Cancel call from another thread to avoid reentrance.
+          cancelLater(call, 0).join();
+        } catch (InterruptedException e) {
+          throw new AssertionError();
+        }
+      }
+    };
     client = client.newBuilder().eventListener(listener).build();
 
     Call call = client.newCall(new Request.Builder().url(server.url("/a")).build());
@@ -3553,6 +3551,30 @@ public final class CallTest {
       assertTrue(source.exhausted());
       assertEquals(Headers.of("trailers", "boom"), response.trailers());
     }
+  }
+
+  @Test public void requestBodyThrowsUnrelatedToNetwork() throws Exception {
+    server.enqueue(new MockResponse());
+
+    Request request = new Request.Builder()
+        .url(server.url("/"))
+        .post(new RequestBody() {
+          @Override public @Nullable MediaType contentType() {
+            return null;
+          }
+
+          @Override public void writeTo(BufferedSink sink) throws IOException {
+            throw new IOException("boom");
+          }
+        })
+        .build();
+
+    executeSynchronously(request).assertFailure("boom");
+  }
+
+  @Test public void requestBodyThrowsUnrelatedToNetwork_HTTP2() throws Exception {
+    enableProtocol(Protocol.HTTP_2);
+    requestBodyThrowsUnrelatedToNetwork();
   }
 
   private void makeFailingCall() {

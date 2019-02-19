@@ -23,6 +23,7 @@ import java.net.ProtocolException;
 import java.net.Proxy;
 import java.net.SocketTimeoutException;
 import java.security.cert.CertificateException;
+import javax.annotation.Nullable;
 import javax.net.ssl.SSLHandshakeException;
 import javax.net.ssl.SSLPeerUnverifiedException;
 import okhttp3.HttpUrl;
@@ -32,8 +33,10 @@ import okhttp3.Request;
 import okhttp3.RequestBody;
 import okhttp3.Response;
 import okhttp3.Route;
-import okhttp3.internal.Transmitter;
+import okhttp3.internal.Internal;
+import okhttp3.internal.connection.Exchange;
 import okhttp3.internal.connection.RouteException;
+import okhttp3.internal.connection.Transmitter;
 import okhttp3.internal.http2.ConnectionShutdownException;
 
 import static java.net.HttpURLConnection.HTTP_CLIENT_TIMEOUT;
@@ -81,12 +84,11 @@ public final class RetryAndFollowUpInterceptor implements Interceptor {
       }
 
       Response response;
-      boolean releaseConnection = true;
+      boolean success = false;
       try {
         response = realChain.proceed(request, transmitter, null);
-        releaseConnection = false;
+        success = true;
       } catch (RouteException e) {
-        releaseConnection = false;
         // The attempt to connect via a route failed. The request will not have been sent.
         if (!recover(e.getLastConnectException(), transmitter, false, request)) {
           throw e.getFirstConnectException();
@@ -95,13 +97,12 @@ public final class RetryAndFollowUpInterceptor implements Interceptor {
       } catch (IOException e) {
         // An attempt to communicate with a server failed. The request may have been sent.
         boolean requestSendStarted = !(e instanceof ConnectionShutdownException);
-        releaseConnection = false;
         if (!recover(e, transmitter, requestSendStarted, request)) throw e;
         continue;
       } finally {
-        // We're throwing an unchecked exception. Release any resources.
-        if (releaseConnection) {
-          transmitter.streamFailed(null);
+        // The network call threw an exception. Release any resources.
+        if (!success) {
+          transmitter.exchangeDoneDueToException();
         }
       }
 
@@ -116,7 +117,9 @@ public final class RetryAndFollowUpInterceptor implements Interceptor {
 
       Request followUp;
       try {
-        followUp = followUpRequest(response, transmitter.route());
+        Exchange exchange = Internal.instance.exchange(response);
+        Route route = exchange != null ? exchange.connection().route() : null;
+        followUp = followUpRequest(response, route);
       } catch (IOException e) {
         throw e;
       }
@@ -127,7 +130,7 @@ public final class RetryAndFollowUpInterceptor implements Interceptor {
 
       closeQuietly(response.body());
 
-      if (transmitter.hasCodec()) {
+      if (transmitter.hasExchange()) {
         throw new IllegalStateException("Closing the body of " + response
             + " didn't close its backing stream. Bad interceptor?");
       }
@@ -153,8 +156,6 @@ public final class RetryAndFollowUpInterceptor implements Interceptor {
    */
   private boolean recover(IOException e, Transmitter transmitter,
       boolean requestSendStarted, Request userRequest) {
-    transmitter.streamFailed(e);
-
     // The application layer has forbidden retries.
     if (!client.retryOnConnectionFailure()) return false;
 
@@ -165,7 +166,7 @@ public final class RetryAndFollowUpInterceptor implements Interceptor {
     if (!isRecoverable(e, requestSendStarted)) return false;
 
     // No more routes to attempt.
-    if (!transmitter.hasMoreRoutes()) return false;
+    if (!transmitter.canRetry()) return false;
 
     // For failure recovery, use the same route selector with a new connection.
     return true;
@@ -213,7 +214,7 @@ public final class RetryAndFollowUpInterceptor implements Interceptor {
    * either add authentication headers, follow redirects or handle a client request timeout. If a
    * follow-up is either unnecessary or not applicable, this returns null.
    */
-  private Request followUpRequest(Response userResponse, Route route) throws IOException {
+  private Request followUpRequest(Response userResponse, @Nullable Route route) throws IOException {
     if (userResponse == null) throw new IllegalStateException();
     int responseCode = userResponse.code();
 

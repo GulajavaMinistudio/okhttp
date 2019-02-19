@@ -21,7 +21,6 @@ import okhttp3.Interceptor;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
 import okhttp3.Response;
-import okhttp3.internal.Transmitter;
 import okhttp3.internal.http.RealInterceptorChain;
 
 /** Opens a connection to the target server and proceeds to the next interceptor. */
@@ -39,8 +38,8 @@ public final class ConnectInterceptor implements Interceptor {
 
     // We need the network to satisfy this request. Possibly for validating a conditional GET.
     boolean doExtensiveHealthChecks = !request.method().equals("GET");
-    RealConnection connection = transmitter.newStream(chain, doExtensiveHealthChecks);
+    Exchange exchange = transmitter.newExchange(chain, doExtensiveHealthChecks);
 
-    return realChain.proceed(request, transmitter, connection);
+    return realChain.proceed(request, transmitter, exchange);
   }
 }
