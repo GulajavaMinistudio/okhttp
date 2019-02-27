@@ -22,7 +22,6 @@ import okhttp3.Request;
 import okhttp3.Response;
 import okhttp3.internal.Util;
 import okhttp3.internal.connection.Exchange;
-import okhttp3.internal.duplex.DuplexRequestBody;
 import okio.BufferedSink;
 import okio.Okio;
 
@@ -57,14 +56,16 @@ public final class CallServerInterceptor implements Interceptor {
       }
 
       if (responseBuilder == null) {
-        if (request.body() instanceof DuplexRequestBody) {
+        if (request.body().isDuplex()) {
           // Prepare a duplex body so that the application can send a request body later.
           exchange.flushRequest();
-          BufferedSink bufferedRequestBody = Okio.buffer(exchange.createRequestBody(request));
+          BufferedSink bufferedRequestBody = Okio.buffer(
+              exchange.createRequestBody(request, true));
           request.body().writeTo(bufferedRequestBody);
         } else {
           // Write the request body if the "Expect: 100-continue" expectation was met.
-          BufferedSink bufferedRequestBody = Okio.buffer(exchange.createRequestBody(request));
+          BufferedSink bufferedRequestBody = Okio.buffer(
+              exchange.createRequestBody(request, false));
           request.body().writeTo(bufferedRequestBody);
           bufferedRequestBody.close();
         }
@@ -81,7 +82,7 @@ public final class CallServerInterceptor implements Interceptor {
       exchange.noRequestBody();
     }
 
-    if (!(request.body() instanceof DuplexRequestBody)) {
+    if (request.body() == null || !request.body().isDuplex()) {
       exchange.finishRequest();
     }
 
