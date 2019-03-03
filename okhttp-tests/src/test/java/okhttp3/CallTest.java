@@ -127,9 +127,7 @@ public final class CallTest {
     cache.delete();
     logger.removeHandler(logHandler);
 
-    // Ensure the test has released all connections.
-    client.connectionPool().evictAll();
-    assertEquals(0, client.connectionPool().connectionCount());
+    TestUtil.ensureAllConnectionsReleased(client);
   }
 
   @Test public void get() throws Exception {
@@ -1202,49 +1200,6 @@ public final class CallTest {
     }
   }
 
-  /**
-   * When the server doesn't present any certificates we fail the TLS handshake. This test requires
-   * that the client and server are each configured with a cipher suite that permits the server to
-   * be unauthenticated.
-   */
-  @Test public void tlsSuccessWithNoPeerCertificates() throws Exception {
-    // TODO https://github.com/square/okhttp/issues/4598
-    // No appropriate protocol (protocol is disabled or cipher suites are inappropriate)
-    assumeFalse(getJvmSpecVersion().equals("11"));
-
-    server.enqueue(new MockResponse()
-        .setBody("abc"));
-
-    // The _anon_ cipher suites don't require server certificates.
-    CipherSuite cipherSuite = TLS_DH_anon_WITH_AES_128_GCM_SHA256;
-
-    HandshakeCertificates clientCertificates = new HandshakeCertificates.Builder()
-        .build();
-    client = client.newBuilder()
-        .sslSocketFactory(
-            socketFactoryWithCipherSuite(clientCertificates.sslSocketFactory(), cipherSuite),
-            clientCertificates.trustManager())
-        .connectionSpecs(Arrays.asList(new ConnectionSpec.Builder(ConnectionSpec.MODERN_TLS)
-            .cipherSuites(cipherSuite)
-            .build()))
-        .hostnameVerifier(new RecordingHostnameVerifier())
-        .build();
-
-    HandshakeCertificates serverCertificates = new HandshakeCertificates.Builder()
-        .build();
-    server.useHttps(socketFactoryWithCipherSuite(
-        serverCertificates.sslSocketFactory(), cipherSuite), false);
-
-    Call call = client.newCall(new Request.Builder()
-        .url(server.url("/"))
-        .build());
-    Response response = call.execute();
-    assertEquals("abc", response.body().string());
-    assertNull(response.handshake().peerPrincipal());
-    assertEquals(Collections.emptyList(), response.handshake().peerCertificates());
-    assertEquals(cipherSuite, response.handshake().cipherSuite());
-  }
-
   @Test public void tlsHostnameVerificationFailure() throws Exception {
     server.enqueue(new MockResponse());
 
@@ -1270,14 +1225,17 @@ public final class CallTest {
         .assertFailureMatches("(?s)Hostname localhost not verified.*");
   }
 
-  @Test public void tlsHostnameVerificationFailureNoPeerCertificates() throws Exception {
+  /**
+   * Anonymous cipher suites were disabled in OpenJDK because they're rarely used and permit
+   * man-in-the-middle attacks. https://bugs.openjdk.java.net/browse/JDK-8212823
+   */
+  @Test public void anonCipherSuiteUnsupported() throws Exception {
+    // The _anon_ suites became unsupported in "1.8.0_201" and "11.0.2".
+    assumeFalse(System.getProperty("java.version", "unknown").matches("1\\.8\\.0_1\\d\\d"));
+    assumeFalse(System.getProperty("java.version", "unknown").matches("11"));
+
     server.enqueue(new MockResponse());
 
-    // TODO https://github.com/square/okhttp/issues/4598
-    // No appropriate protocol (protocol is disabled or cipher suites are inappropriate)
-    assumeFalse(getJvmSpecVersion().equals("11"));
-
-    // The _anon_ cipher suites don't require server certificates.
     CipherSuite cipherSuite = TLS_DH_anon_WITH_AES_128_GCM_SHA256;
 
     HandshakeCertificates clientCertificates = new HandshakeCertificates.Builder()
@@ -1297,7 +1255,7 @@ public final class CallTest {
         serverCertificates.sslSocketFactory(), cipherSuite), false);
 
     executeSynchronously("/")
-        .assertFailure("Hostname localhost not verified (no certificates)");
+        .assertFailure(SSLHandshakeException.class);
   }
 
   @Test public void cleartextCallsFailWhenCleartextIsDisabled() throws Exception {
@@ -1900,6 +1858,71 @@ public final class CallTest {
     Response response = client.newCall(request).execute();
 
     assertEquals("Body", response.body().string());
+  }
+
+  @Test public void canRetryNormalRequestBody() throws Exception {
+    server.enqueue(new MockResponse()
+        .setResponseCode(503)
+        .setHeader("Retry-After", "0")
+        .setBody("please retry"));
+    server.enqueue(new MockResponse()
+        .setBody("thank you for retrying"));
+
+    Request request = new Request.Builder()
+        .url(server.url("/"))
+        .post(new RequestBody() {
+          int attempt = 0;
+
+          @Override public @Nullable MediaType contentType() {
+            return null;
+          }
+
+          @Override public void writeTo(BufferedSink sink) throws IOException {
+            sink.writeUtf8("attempt " + (attempt++));
+          }
+        })
+        .build();
+    Response response = client.newCall(request).execute();
+    assertEquals(200, response.code());
+    assertEquals("thank you for retrying", response.body().string());
+
+    assertEquals("attempt 0", server.takeRequest().getBody().readUtf8());
+    assertEquals("attempt 1", server.takeRequest().getBody().readUtf8());
+    assertEquals(2, server.getRequestCount());
+  }
+
+  @Test public void cannotRetryOneShotRequestBody() throws Exception {
+    server.enqueue(new MockResponse()
+        .setResponseCode(503)
+        .setHeader("Retry-After", "0")
+        .setBody("please retry"));
+    server.enqueue(new MockResponse()
+        .setBody("thank you for retrying"));
+
+    Request request = new Request.Builder()
+        .url(server.url("/"))
+        .post(new RequestBody() {
+          int attempt = 0;
+
+          @Override public @Nullable MediaType contentType() {
+            return null;
+          }
+
+          @Override public void writeTo(BufferedSink sink) throws IOException {
+            sink.writeUtf8("attempt " + (attempt++));
+          }
+
+          @Override public boolean isOneShot() {
+            return true;
+          }
+        })
+        .build();
+    Response response = client.newCall(request).execute();
+    assertEquals(503, response.code());
+    assertEquals("please retry", response.body().string());
+
+    assertEquals("attempt 0", server.takeRequest().getBody().readUtf8());
+    assertEquals(1, server.getRequestCount());
   }
 
   @Test public void propfindRedirectsToPropfindAndMaintainsRequestBody() throws Exception {
