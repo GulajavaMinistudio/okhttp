@@ -27,9 +27,8 @@ import org.junit.After;
 import org.junit.Assume;
 import org.junit.Test;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertTrue;
+import static java.util.Arrays.asList;
+import static org.assertj.core.api.Assertions.assertThat;
 
 public class ConscryptTest {
   public static final CipherSuite[] MANDATORY_CIPHER_SUITES = new CipherSuite[] {
@@ -55,7 +54,7 @@ public class ConscryptTest {
         .supportsTlsExtensions(true)
         .build();
 
-    return new OkHttpClient.Builder().connectionSpecs(Arrays.asList(spec)).build();
+    return new OkHttpClient.Builder().connectionSpecs(asList(spec)).build();
   }
 
   private static void assumeConscrypt() {
@@ -79,7 +78,7 @@ public class ConscryptTest {
 
     Response response = client.newCall(request).execute();
 
-    assertEquals(Protocol.HTTP_2, response.protocol());
+    assertThat(response.protocol()).isEqualTo(Protocol.HTTP_2);
   }
 
   @Test
@@ -91,12 +90,12 @@ public class ConscryptTest {
 
     Response response = client.newCall(request).execute();
 
-    assertEquals(Protocol.HTTP_2, response.protocol());
+    assertThat(response.protocol()).isEqualTo(Protocol.HTTP_2);
   }
 
   @Test
   public void testBuild() {
-    assertNotNull(ConscryptPlatform.buildIfSupported());
+    assertThat(ConscryptPlatform.buildIfSupported()).isNotNull();
   }
 
   @Test
@@ -105,7 +104,7 @@ public class ConscryptTest {
 
     try {
       Security.insertProviderAt(new OpenSSLProvider(), 1);
-      assertTrue(Platform.isConscryptPreferred());
+      assertThat(Platform.isConscryptPreferred()).isTrue();
     } finally {
       Security.removeProvider("Conscrypt");
     }

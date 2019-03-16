@@ -3,7 +3,7 @@ Change Log
 
 ## Version 3.14.0
 
-_RELEASE TBD_
+_2019-03-14_
 
  *  **This release deletes the long-deprecated `OkUrlFactory` and `OkApacheClient` APIs.** These
     facades hide OkHttp's implementation behind another client's API. If you still need this please
@@ -71,6 +71,15 @@ _RELEASE TBD_
     ```
 
  *  New: Update the embedded public suffixes list.
+
+
+## Version 3.12.2
+
+_2019-03-14_
+
+ *  Fix: Don't crash if the HTTPS server returns no certificates in the TLS handshake.
+ *  Fix: Don't leak a connection when a call is canceled immediately preceding the `onFailure()`
+    callback.
 
 
 ## Version 3.13.1
