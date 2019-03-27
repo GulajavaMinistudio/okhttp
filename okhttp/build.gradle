@@ -29,8 +29,16 @@ dependencies {
   compileOnly deps.jsr305
   compileOnly deps.animalSniffer
 
+  testImplementation deps.okio
+  testImplementation project(':okhttp-testing-support')
+  testImplementation project(':okhttp-tls')
+  testImplementation project(':okhttp-urlconnection')
+  testImplementation project(':mockwebserver')
+  testImplementation project(':okhttp-logging-interceptor')
+  testImplementation deps.conscrypt
   testImplementation deps.junit
   testImplementation deps.assertj
+  testCompileOnly deps.jsr305
 }
 
 apply plugin: 'me.champeau.gradle.japicmp'
@@ -68,6 +76,11 @@ task japicmp(type: me.champeau.gradle.japicmp.JapicmpTask, dependsOn: 'jar') {
       'okhttp3.CacheControl$Builder#noStore()',
       'okhttp3.CacheControl$Builder#noTransform()',
       'okhttp3.CacheControl$Builder#onlyIfCached()',
+      'okhttp3.Challenge#scheme()',
+      'okhttp3.Challenge#authParams()',
+      'okhttp3.Challenge#realm()',
+      'okhttp3.Challenge#charset()',
+      'okhttp3.Challenge#withCharset(java.nio.charset.Charset)',
       'okhttp3.ConnectionPool#connectionCount()',
       'okhttp3.ConnectionPool#evictAll()',
       'okhttp3.ConnectionPool#idleConnectionCount()',
@@ -90,6 +103,17 @@ task japicmp(type: me.champeau.gradle.japicmp.JapicmpTask, dependsOn: 'jar') {
       'okhttp3.Cookie$Builder#path(java.lang.String)',
       'okhttp3.Cookie$Builder#secure()',
       'okhttp3.Cookie$Builder#value(java.lang.String)',
+      'okhttp3.Address#certificatePinner()',
+      'okhttp3.Address#connectionSpecs()',
+      'okhttp3.Address#dns()',
+      'okhttp3.Address#hostnameVerifier()',
+      'okhttp3.Address#protocols()',
+      'okhttp3.Address#proxy()',
+      'okhttp3.Address#proxyAuthenticator()',
+      'okhttp3.Address#proxySelector()',
+      'okhttp3.Address#sslSocketFactory()',
+      'okhttp3.Address#url()',
+      'okhttp3.Address#socketFactory()',
       'okhttp3.FormBody#encodedName(int)',
       'okhttp3.FormBody#encodedValue(int)',
       'okhttp3.FormBody#name(int)',
@@ -98,6 +122,35 @@ task japicmp(type: me.champeau.gradle.japicmp.JapicmpTask, dependsOn: 'jar') {
       'okhttp3.FormBody$Builder#add(java.lang.String, java.lang.String)',
       'okhttp3.FormBody$Builder#addEncoded(java.lang.String, java.lang.String)',
       'okhttp3.FormBody$Builder#build()',
+      'okhttp3.Handshake#cipherSuite()',
+      'okhttp3.Handshake#localCertificates()',
+      'okhttp3.Handshake#localPrincipal()',
+      'okhttp3.Handshake#peerCertificates()',
+      'okhttp3.Handshake#tlsVersion()',
+      'okhttp3.Handshake#peerPrincipal()',
+      'okhttp3.Headers#byteCount()',
+      'okhttp3.Headers#get(java.lang.String)',
+      'okhttp3.Headers#getDate(java.lang.String)',
+      'okhttp3.Headers#getInstant(java.lang.String)',
+      'okhttp3.Headers#name(int)',
+      'okhttp3.Headers#names()',
+      'okhttp3.Headers#newBuilder()',
+      'okhttp3.Headers#size()',
+      'okhttp3.Headers#toMultimap()',
+      'okhttp3.Headers#value(int)',
+      'okhttp3.Headers#values(java.lang.String)',
+      'okhttp3.Headers$Builder#add(java.lang.String)',
+      'okhttp3.Headers$Builder#add(java.lang.String, java.lang.String)',
+      'okhttp3.Headers$Builder#add(java.lang.String, java.util.Date)',
+      'okhttp3.Headers$Builder#add(java.lang.String, java.time.Instant)',
+      'okhttp3.Headers$Builder#addAll(okhttp3.Headers)',
+      'okhttp3.Headers$Builder#addUnsafeNonAscii(java.lang.String, java.lang.String)',
+      'okhttp3.Headers$Builder#build()',
+      'okhttp3.Headers$Builder#get(java.lang.String)',
+      'okhttp3.Headers$Builder#removeAll(java.lang.String)',
+      'okhttp3.Headers$Builder#set(java.lang.String, java.util.Date)',
+      'okhttp3.Headers$Builder#set(java.lang.String, java.time.Instant)',
+      'okhttp3.Headers$Builder#set(java.lang.String, java.lang.String)',
       'okhttp3.HttpUrl#encodedFragment()',
       'okhttp3.HttpUrl#encodedPassword()',
       'okhttp3.HttpUrl#encodedPath()',
@@ -157,6 +210,19 @@ task japicmp(type: me.champeau.gradle.japicmp.JapicmpTask, dependsOn: 'jar') {
       'okhttp3.MediaType#charset(java.nio.charset.Charset)',
       'okhttp3.MediaType#subtype()',
       'okhttp3.MediaType#type()',
+      'okhttp3.RealCall#getResponseWithInterceptorChain()',
+      'okhttp3.RealCall#redactedUrl()',
+      'okhttp3.RealCall#toLoggableString()',
+      'okhttp3.RealCall$AsyncCall#callsPerHost()',
+      'okhttp3.RealCall$AsyncCall#executeOn(java.util.concurrent.ExecutorService)',
+      'okhttp3.RealCall$AsyncCall#get()',
+      'okhttp3.RealCall$AsyncCall#host()',
+      'okhttp3.RealCall$AsyncCall#request()',
+      'okhttp3.RealCall$AsyncCall#reuseCallsPerHostFrom(okhttp3.RealCall$AsyncCall)',
+      'okhttp3.Route#address()',
+      'okhttp3.Route#proxy()',
+      'okhttp3.Route#requiresTunnel()',
+      'okhttp3.Route#socketAddress()',
       'okhttp3.TlsVersion#javaName()',
   ]
 }

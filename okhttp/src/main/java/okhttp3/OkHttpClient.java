@@ -48,6 +48,7 @@ import okio.Sink;
 import okio.Source;
 import org.codehaus.mojo.animal_sniffer.IgnoreJRERequirement;
 
+import static okhttp3.internal.InternalKtKt.addressEqualsNonHost;
 import static okhttp3.internal.Util.checkDuration;
 
 /**
@@ -129,20 +130,12 @@ public class OkHttpClient implements Cloneable, Call.Factory, WebSocket.Factory 
 
   static {
     Internal.instance = new Internal() {
-      @Override public void addLenient(Headers.Builder builder, String line) {
-        builder.addLenient(line);
-      }
-
-      @Override public void addLenient(Headers.Builder builder, String name, String value) {
-        builder.addLenient(name, value);
-      }
-
       @Override public RealConnectionPool realConnectionPool(ConnectionPool connectionPool) {
         return connectionPool.delegate;
       }
 
       @Override public boolean equalsNonHost(Address a, Address b) {
-        return a.equalsNonHost(b);
+        return addressEqualsNonHost(a, b);
       }
 
       @Override public int code(Response.Builder responseBuilder) {
