@@ -30,11 +30,11 @@ import javax.annotation.Nullable;
 import javax.net.SocketFactory;
 import javax.net.ssl.HostnameVerifier;
 import javax.net.ssl.SSLContext;
-import javax.net.ssl.SSLSocket;
 import javax.net.ssl.SSLSocketFactory;
 import javax.net.ssl.TrustManager;
 import javax.net.ssl.X509TrustManager;
 import okhttp3.internal.Internal;
+import okhttp3.internal.InternalKtKt;
 import okhttp3.internal.Util;
 import okhttp3.internal.cache.InternalCache;
 import okhttp3.internal.connection.Exchange;
@@ -49,6 +49,7 @@ import okio.Source;
 import org.codehaus.mojo.animal_sniffer.IgnoreJRERequirement;
 
 import static okhttp3.internal.InternalKtKt.addressEqualsNonHost;
+import static okhttp3.internal.InternalKtKt.certificatePinnerWithCertificateChainCleaner;
 import static okhttp3.internal.Util.checkDuration;
 
 /**
@@ -142,11 +143,6 @@ public class OkHttpClient implements Cloneable, Call.Factory, WebSocket.Factory 
         return responseBuilder.code;
       }
 
-      @Override
-      public void apply(ConnectionSpec tlsConfiguration, SSLSocket sslSocket, boolean isFallback) {
-        tlsConfiguration.apply(sslSocket, isFallback);
-      }
-
       @Override public Call newWebSocketCall(OkHttpClient client, Request originalRequest) {
         return RealCall.newRealCall(client, originalRequest, true);
       }
@@ -228,8 +224,8 @@ public class OkHttpClient implements Cloneable, Call.Factory, WebSocket.Factory 
     }
 
     this.hostnameVerifier = builder.hostnameVerifier;
-    this.certificatePinner = builder.certificatePinner.withCertificateChainCleaner(
-        certificateChainCleaner);
+    this.certificatePinner = certificatePinnerWithCertificateChainCleaner(
+        builder.certificatePinner, certificateChainCleaner);
     this.proxyAuthenticator = builder.proxyAuthenticator;
     this.authenticator = builder.authenticator;
     this.connectionPool = builder.connectionPool;
@@ -306,7 +302,7 @@ public class OkHttpClient implements Cloneable, Call.Factory, WebSocket.Factory 
   }
 
   @Nullable InternalCache internalCache() {
-    return cache != null ? cache.internalCache : internalCache;
+    return cache != null ? InternalKtKt.internalCache(cache) : internalCache;
   }
 
   public Dns dns() {
