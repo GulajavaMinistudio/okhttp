@@ -1,3 +1,5 @@
+import net.ltgt.gradle.errorprone.CheckSeverity
+
 buildscript {
   ext.versions = [
       'airline': '0.8',
@@ -104,6 +106,10 @@ subprojects { project ->
   test {
     jvmArgs += "-Dlistener=okhttp3.testing.InstallUncaughtExceptionHandlerListener"
     jvmArgs += "-Dokhttp.platform=platform"
+
+    testLogging {
+      exceptionFormat = 'full'
+    }
   }
 
   // Add alpn-boot on Java 8 so we can use HTTP/2 without a stable API.
@@ -123,6 +129,11 @@ subprojects { project ->
     errorproneJavac 'com.google.errorprone:javac:9+181-r4173-1'
     errorprone 'com.google.errorprone:error_prone_core:2.3.3'
   }
+  tasks.withType(JavaCompile).configureEach {
+    options.errorprone {
+      check("MissingOverride", CheckSeverity.ERROR)
+    }
+  }
 
   apply plugin: 'org.jetbrains.dokka'
   dokka {
@@ -131,6 +142,10 @@ subprojects { project ->
     packageOptions {
       prefix = "okhttp3.internal"
       suppress = true
+    }
+    externalDocumentationLink {
+      url = new URL("https://square.github.io/okio/2.x/okio/jvm/index.html")
+      packageListUrl = new URL("https://square.github.io/okio/2.x/okio/jvm/package-list")
     }
   }
 }
