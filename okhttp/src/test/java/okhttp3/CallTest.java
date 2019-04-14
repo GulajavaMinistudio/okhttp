@@ -2655,7 +2655,7 @@ public final class CallTest {
     executeSynchronously("/");
 
     RecordedRequest recordedRequest = server.takeRequest();
-    assertThat(recordedRequest.getHeader("User-Agent")).matches(Version.userAgent());
+    assertThat(recordedRequest.getHeader("User-Agent")).matches(Version.userAgent);
   }
 
   @Test public void setFollowRedirectsFalse() throws Exception {
@@ -2958,7 +2958,7 @@ public final class CallTest {
 
     RecordedRequest connect = server.takeRequest();
     assertThat(connect.getHeader("Private")).isNull();
-    assertThat(connect.getHeader("User-Agent")).isEqualTo(Version.userAgent());
+    assertThat(connect.getHeader("User-Agent")).isEqualTo(Version.userAgent);
     assertThat(connect.getHeader("Proxy-Connection")).isEqualTo("Keep-Alive");
     assertThat(connect.getHeader("Host")).isEqualTo("android.com:443");
 
@@ -3229,6 +3229,29 @@ public final class CallTest {
     assertThat(connect2.getHeader("Proxy-Authorization")).isEqualTo(credential);
 
     assertThat(challengeSchemes).containsExactly("OkHttp-Preemptive", "Basic");
+  }
+
+  /** https://github.com/square/okhttp/issues/4915 */
+  @Test @Ignore public void proxyDisconnectsAfterRequest() throws Exception {
+    server.useHttps(handshakeCertificates.sslSocketFactory(), true);
+    server.enqueue(new MockResponse()
+        .setSocketPolicy(SocketPolicy.DISCONNECT_AFTER_REQUEST));
+
+    client = client.newBuilder()
+        .sslSocketFactory(
+            handshakeCertificates.sslSocketFactory(), handshakeCertificates.trustManager())
+        .proxy(server.toProxyAddress())
+        .build();
+
+    Request request = new Request.Builder()
+        .url(server.url("/"))
+        .build();
+
+    try {
+      Response response = client.newCall(request).execute();
+      fail();
+    } catch (IOException expected) {
+    }
   }
 
   @Test public void interceptorGetsHttp2() throws Exception {

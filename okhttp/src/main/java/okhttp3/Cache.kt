@@ -642,13 +642,12 @@ class Cache internal constructor(
       } catch (e: CertificateEncodingException) {
         throw IOException(e.message)
       }
-
     }
 
     fun matches(request: Request, response: Response): Boolean {
-      return url == request.url().toString()
-          && requestMethod == request.method()
-          && HttpHeaders.varyMatches(response, varyHeaders, request)
+      return url == request.url().toString() &&
+          requestMethod == request.method() &&
+          HttpHeaders.varyMatches(response, varyHeaders, request)
     }
 
     fun response(snapshot: DiskLruCache.Snapshot): Response {
@@ -729,7 +728,7 @@ class Cache internal constructor(
       try {
         val result = source.readDecimalLong()
         val line = source.readUtf8LineStrict()
-        if (result < 0 || result > Integer.MAX_VALUE || !line.isEmpty()) {
+        if (result < 0 || result > Integer.MAX_VALUE || line.isNotEmpty()) {
           throw IOException("expected an int but was \"$result$line\"")
         }
         return result.toInt()
