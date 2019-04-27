@@ -27,6 +27,7 @@ import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.SynchronousQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.logging.Level;
@@ -794,7 +795,7 @@ public final class HttpOverHttp2Test {
   @Test public void recoverFromOneRefusedStreamReusesConnection() throws Exception {
     server.enqueue(new MockResponse()
         .setSocketPolicy(SocketPolicy.RESET_STREAM_AT_START)
-        .setHttp2ErrorCode(ErrorCode.REFUSED_STREAM.httpCode));
+        .setHttp2ErrorCode(ErrorCode.REFUSED_STREAM.getHttpCode()));
     server.enqueue(new MockResponse()
         .setBody("abc"));
 
@@ -813,7 +814,7 @@ public final class HttpOverHttp2Test {
   @Test public void recoverFromOneInternalErrorRequiresNewConnection() throws Exception {
     server.enqueue(new MockResponse()
         .setSocketPolicy(SocketPolicy.RESET_STREAM_AT_START)
-        .setHttp2ErrorCode(ErrorCode.INTERNAL_ERROR.httpCode));
+        .setHttp2ErrorCode(ErrorCode.INTERNAL_ERROR.getHttpCode()));
     server.enqueue(new MockResponse()
         .setBody("abc"));
 
@@ -836,10 +837,10 @@ public final class HttpOverHttp2Test {
   @Test public void recoverFromMultipleRefusedStreamsRequiresNewConnection() throws Exception {
     server.enqueue(new MockResponse()
         .setSocketPolicy(SocketPolicy.RESET_STREAM_AT_START)
-        .setHttp2ErrorCode(ErrorCode.REFUSED_STREAM.httpCode));
+        .setHttp2ErrorCode(ErrorCode.REFUSED_STREAM.getHttpCode()));
     server.enqueue(new MockResponse()
         .setSocketPolicy(SocketPolicy.RESET_STREAM_AT_START)
-        .setHttp2ErrorCode(ErrorCode.REFUSED_STREAM.httpCode));
+        .setHttp2ErrorCode(ErrorCode.REFUSED_STREAM.getHttpCode()));
     server.enqueue(new MockResponse()
         .setBody("abc"));
 
@@ -933,7 +934,7 @@ public final class HttpOverHttp2Test {
     assertThat(server.takeRequest().getSequenceNumber()).isEqualTo(2);
   }
 
-  private class RespondAfterCancelDispatcher extends QueueDispatcher {
+  private static class RespondAfterCancelDispatcher extends QueueDispatcher {
     final private List<CountDownLatch> responseDequeuedLatches;
     final private List<CountDownLatch> requestCanceledLatches;
     private int responseIndex = 0;
@@ -997,7 +998,7 @@ public final class HttpOverHttp2Test {
   private void noRecoveryFromErrorWithRetryDisabled(ErrorCode errorCode) throws Exception {
     server.enqueue(new MockResponse()
         .setSocketPolicy(SocketPolicy.RESET_STREAM_AT_START)
-        .setHttp2ErrorCode(errorCode.httpCode));
+        .setHttp2ErrorCode(errorCode.getHttpCode()));
     server.enqueue(new MockResponse()
         .setBody("abc"));
 
@@ -1021,7 +1022,7 @@ public final class HttpOverHttp2Test {
         .setResponseCode(401));
     server.enqueue(new MockResponse()
         .setSocketPolicy(SocketPolicy.RESET_STREAM_AT_START)
-        .setHttp2ErrorCode(ErrorCode.INTERNAL_ERROR.httpCode));
+        .setHttp2ErrorCode(ErrorCode.INTERNAL_ERROR.getHttpCode()));
     server.enqueue(new MockResponse()
         .setBody("DEF"));
     server.enqueue(new MockResponse()
@@ -1413,7 +1414,7 @@ public final class HttpOverHttp2Test {
         .setSocketPolicy(SocketPolicy.DISCONNECT_AT_END)
         .setBody("DEF"));
 
-    BlockingQueue<String> bodies = new SynchronousQueue<>();
+    BlockingQueue<String> bodies = new LinkedBlockingQueue<>();
     Callback callback = new Callback() {
       @Override public void onResponse(Call call, Response response) throws IOException {
         bodies.add(response.body().string());
