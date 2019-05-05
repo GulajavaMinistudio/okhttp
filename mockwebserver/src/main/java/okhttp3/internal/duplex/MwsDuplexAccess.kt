@@ -13,14 +13,20 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package okhttp3.mockwebserver.internal.duplex;
+package okhttp3.internal.duplex
 
-import java.io.IOException;
-import okhttp3.mockwebserver.RecordedRequest;
-import okio.BufferedSink;
-import okio.BufferedSource;
+import okhttp3.mockwebserver.MockResponse
+import okhttp3.mockwebserver.internal.duplex.DuplexResponseBody
 
-public interface DuplexResponseBody {
-  void onRequest(RecordedRequest request, BufferedSource requestBody, BufferedSink responseBody)
-      throws IOException;
+/**
+ * Internal access to MockWebServer APIs. Don't use this, don't use internal, these APIs are not
+ * stable.
+ */
+abstract class MwsDuplexAccess {
+
+  abstract fun setBody(mockResponse: MockResponse, duplexResponseBody: DuplexResponseBody)
+
+  companion object {
+    @JvmField var instance: MwsDuplexAccess? = null
+  }
 }
