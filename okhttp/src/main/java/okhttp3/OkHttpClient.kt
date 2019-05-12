@@ -21,7 +21,6 @@ import okhttp3.internal.Internal
 import okhttp3.internal.Util
 import okhttp3.internal.Util.checkDuration
 import okhttp3.internal.cache.InternalCache
-import okhttp3.internal.connection.Exchange
 import okhttp3.internal.platform.Platform
 import okhttp3.internal.proxy.NullProxySelector
 import okhttp3.internal.tls.CertificateChainCleaner
@@ -829,17 +828,6 @@ open class OkHttpClient internal constructor(
       Internal.instance = object : Internal() {
         override fun realConnectionPool(connectionPool: ConnectionPool) =
             connectionPool.delegate
-
-        override fun equalsNonHost(a: Address, b: Address) = a.equalsNonHost(b)
-
-        override fun code(responseBuilder: Response.Builder) = responseBuilder.code
-
-        override fun newWebSocketCall(client: OkHttpClient, originalRequest: Request) =
-            RealCall.newRealCall(client, originalRequest, true)
-
-        override fun initExchange(responseBuilder: Response.Builder, exchange: Exchange) {
-          responseBuilder.initExchange(exchange)
-        }
 
         override fun exchange(response: Response) = response.exchange
       }
