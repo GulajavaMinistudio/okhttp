@@ -15,7 +15,7 @@
  */
 package okhttp3.tls
 
-import okhttp3.internal.Util.verifyAsIpAddress
+import okhttp3.internal.verifyAsIpAddress
 import okio.ByteString
 import okio.ByteString.Companion.toByteString
 import org.bouncycastle.asn1.ASN1Encodable
@@ -166,7 +166,7 @@ class HeldCertificate(private val keyPair: KeyPair, private val certificate: X50
   private fun StringBuilder.encodeBase64Lines(data: ByteString) {
     val base64 = data.base64()
     for (i in 0 until base64.length step 64) {
-      append(base64, i, Math.min(i + 64, base64.length)).append('\n')
+      append(base64, i, minOf(i + 64, base64.length)).append('\n')
     }
   }
 

@@ -26,7 +26,7 @@ import okhttp3.Protocol
 import okhttp3.Request
 import okhttp3.RequestBody
 import okhttp3.curl.Main.Companion.NAME
-import okhttp3.internal.Util
+import okhttp3.internal.format
 import okhttp3.internal.http.StatusLine
 import okhttp3.internal.http2.Http2
 import okhttp3.internal.platform.Platform
@@ -205,7 +205,7 @@ class Main : Runnable {
   private fun mediaType(): MediaType? {
     val mimeType = headers?.let {
       for (header in it) {
-        val parts = header.split(':')
+        val parts = header.split(':', limit = 2)
         if ("Content-Type".equals(parts[0], ignoreCase = true)) {
           it.remove(header)
           return@let parts[1].trim()
@@ -268,7 +268,7 @@ class Main : Runnable {
           level = Level.FINE
           formatter = object : SimpleFormatter() {
             override fun format(record: LogRecord): String {
-              return Util.format("%s%n", record.message)
+              return format("%s%n", record.message)
             }
           }
         })

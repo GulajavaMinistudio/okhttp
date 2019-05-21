@@ -15,7 +15,7 @@
  */
 package okhttp3.internal.http2
 
-import okhttp3.internal.Util.format
+import okhttp3.internal.format
 import okhttp3.internal.and
 import okhttp3.internal.http2.Http2.CONNECTION_PREFACE
 import okhttp3.internal.http2.Http2.FLAG_ACK
@@ -339,7 +339,7 @@ class Http2Reader(
         // TODO: test case for empty continuation header?
       }
 
-      val read = source.read(sink, Math.min(byteCount, left.toLong()))
+      val read = source.read(sink, minOf(byteCount, left.toLong()))
       if (read == -1L) return -1L
       left -= read.toInt()
       return read

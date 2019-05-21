@@ -18,11 +18,11 @@ package okhttp3.internal.connection
 
 import okhttp3.Address
 import okhttp3.Route
-import okhttp3.internal.Util
 import okhttp3.internal.closeQuietly
 import okhttp3.internal.connection.Transmitter.TransmitterReference
 import okhttp3.internal.notifyAll
 import okhttp3.internal.platform.Platform
+import okhttp3.internal.threadFactory
 import okhttp3.internal.waitNanos
 import java.io.IOException
 import java.net.Proxy
@@ -58,7 +58,7 @@ class RealConnectionPool(
 
   init {
     // Put a floor on the keep alive duration, otherwise cleanup will spin loop.
-    require(keepAliveDuration > 0) { "keepAliveDuration <= 0: $keepAliveDuration" }
+    require(keepAliveDuration > 0L) { "keepAliveDuration <= 0: $keepAliveDuration" }
   }
 
   @Synchronized fun idleConnectionCount(): Int {
@@ -217,7 +217,7 @@ class RealConnectionPool(
 
       // We've discovered a leaked transmitter. This is an application bug.
       val transmitterRef = reference as TransmitterReference
-      val message = "A connection to ${connection.route().address().url()} was leaked. " +
+      val message = "A connection to ${connection.route().address().url} was leaked. " +
           "Did you forget to close a response body?"
       Platform.get().logCloseableLeak(message, transmitterRef.callStackTrace)
 
@@ -239,8 +239,8 @@ class RealConnectionPool(
     // Tell the proxy selector when we fail to connect on a fresh connection.
     if (failedRoute.proxy().type() != Proxy.Type.DIRECT) {
       val address = failedRoute.address()
-      address.proxySelector().connectFailed(
-          address.url().uri(), failedRoute.proxy().address(), failure)
+      address.proxySelector.connectFailed(
+          address.url.toUri(), failedRoute.proxy().address(), failure)
     }
 
     routeDatabase.failed(failedRoute)
@@ -257,7 +257,7 @@ class RealConnectionPool(
         Int.MAX_VALUE, // maximumPoolSize.
         60L, TimeUnit.SECONDS, // keepAliveTime.
         SynchronousQueue(),
-        Util.threadFactory("OkHttp ConnectionPool", true)
+        threadFactory("OkHttp ConnectionPool", true)
     )
   }
 }

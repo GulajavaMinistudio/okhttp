@@ -166,7 +166,7 @@ class Http2ExchangeCodec(
       if (host != null) {
         result.add(Header(TARGET_AUTHORITY, host)) // Optional.
       }
-      result.add(Header(TARGET_SCHEME, request.url().scheme()))
+      result.add(Header(TARGET_SCHEME, request.url().scheme))
 
       for (i in 0 until headers.size) {
         // header names must be lowercase.
@@ -188,7 +188,7 @@ class Http2ExchangeCodec(
         val value = headerBlock.value(i)
         if (name == RESPONSE_STATUS_UTF8) {
           statusLine = StatusLine.parse("HTTP/1.1 $value")
-        } else if (!HTTP_2_SKIPPED_RESPONSE_HEADERS.contains(name)) {
+        } else if (name !in HTTP_2_SKIPPED_RESPONSE_HEADERS) {
           addHeaderLenient(headersBuilder, name, value)
         }
       }

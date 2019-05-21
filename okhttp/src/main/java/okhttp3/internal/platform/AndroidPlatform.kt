@@ -18,7 +18,6 @@ package okhttp3.internal.platform
 import android.os.Build
 import android.util.Log
 import okhttp3.Protocol
-import okhttp3.internal.isAndroidGetsocknameError
 import okhttp3.internal.tls.BasicTrustRootIndex
 import okhttp3.internal.tls.CertificateChainCleaner
 import okhttp3.internal.tls.TrustRootIndex
@@ -81,9 +80,6 @@ class AndroidPlatform(
   ) {
     try {
       socket.connect(address, connectTimeout)
-    } catch (e: AssertionError) {
-      if (isAndroidGetsocknameError(e)) throw IOException(e)
-      throw e
     } catch (e: ClassCastException) {
       // On android 8.0, socket.connect throws a ClassCastException due to a bug
       // see https://issuetracker.google.com/issues/63649622
@@ -170,7 +166,7 @@ class AndroidPlatform(
       var newline = logMessage.indexOf('\n', i)
       newline = if (newline != -1) newline else length
       do {
-        val end = Math.min(newline, i + MAX_LOG_LENGTH)
+        val end = minOf(newline, i + MAX_LOG_LENGTH)
         Log.println(logLevel, "OkHttp", logMessage.substring(i, end))
         i = end
       } while (i < newline)
@@ -397,8 +393,7 @@ class AndroidPlatform(
         } catch (ignored: NoSuchMethodException) {
         }
       }
-      throw IllegalStateException(
-          "Expected Android API level 21+ but was " + Build.VERSION.SDK_INT)
+      throw IllegalStateException("Expected Android API level 21+ but was ${Build.VERSION.SDK_INT}")
     }
   }
 }

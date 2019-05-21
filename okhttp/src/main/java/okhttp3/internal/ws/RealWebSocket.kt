@@ -25,9 +25,9 @@ import okhttp3.Request
 import okhttp3.Response
 import okhttp3.WebSocket
 import okhttp3.WebSocketListener
-import okhttp3.internal.Util
 import okhttp3.internal.closeQuietly
 import okhttp3.internal.connection.Exchange
+import okhttp3.internal.threadFactory
 import okhttp3.internal.ws.WebSocketProtocol.CLOSE_CLIENT_GOING_AWAY
 import okhttp3.internal.ws.WebSocketProtocol.CLOSE_MESSAGE_MAX
 import okhttp3.internal.ws.WebSocketProtocol.OPCODE_BINARY
@@ -226,7 +226,7 @@ class RealWebSocket(
     synchronized(this) {
       this.streams = streams
       this.writer = WebSocketWriter(streams.client, streams.sink, random)
-      this.executor = ScheduledThreadPoolExecutor(1, Util.threadFactory(name, false))
+      this.executor = ScheduledThreadPoolExecutor(1, threadFactory(name, false))
       if (pingIntervalMillis != 0L) {
         executor!!.scheduleAtFixedRate(
             PingRunnable(), pingIntervalMillis, pingIntervalMillis, MILLISECONDS)
@@ -405,10 +405,7 @@ class RealWebSocket(
 
   private fun runWriter() {
     assert(Thread.holdsLock(this))
-
-    if (executor != null) {
-      executor!!.execute(writerRunnable)
-    }
+    executor?.execute(writerRunnable)
   }
 
   /**
@@ -527,8 +524,8 @@ class RealWebSocket(
       failed = true
       streamsToClose = this.streams
       this.streams = null
-      if (cancelFuture != null) cancelFuture!!.cancel(false)
-      if (executor != null) executor!!.shutdown()
+      cancelFuture?.cancel(false)
+      executor?.shutdown()
     }
 
     try {

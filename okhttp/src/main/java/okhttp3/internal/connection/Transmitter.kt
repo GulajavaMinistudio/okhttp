@@ -24,7 +24,7 @@ import okhttp3.HttpUrl
 import okhttp3.Interceptor
 import okhttp3.OkHttpClient
 import okhttp3.Request
-import okhttp3.internal.Util.sameConnection
+import okhttp3.internal.sameConnection
 import okhttp3.internal.closeQuietly
 import okhttp3.internal.platform.Platform
 import okio.AsyncTimeout
@@ -144,7 +144,7 @@ class Transmitter(
       certificatePinner = client.certificatePinner()
     }
 
-    return Address(url.host(), url.port(), client.dns(), client.socketFactory(),
+    return Address(url.host, url.port, client.dns(), client.socketFactory(),
         sslSocketFactory, hostnameVerifier, certificatePinner, client.proxyAuthenticator(),
         client.proxy(), client.protocols(), client.connectionSpecs(), client.proxySelector())
   }

@@ -20,8 +20,8 @@ import okhttp3.HttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
-import okhttp3.internal.Util
-import okhttp3.internal.Util.checkOffsetAndCount
+import okhttp3.internal.EMPTY_HEADERS
+import okhttp3.internal.checkOffsetAndCount
 import okhttp3.internal.addHeaderLenient
 import okhttp3.internal.connection.RealConnection
 import okhttp3.internal.discard
@@ -148,7 +148,7 @@ class Http1ExchangeCodec(
 
   override fun trailers(): Headers {
     check(state == STATE_CLOSED) { "too early; can't read the trailers yet" }
-    return trailers ?: Util.EMPTY_HEADERS
+    return trailers ?: EMPTY_HEADERS
   }
 
   override fun flushRequest() {
@@ -202,7 +202,7 @@ class Http1ExchangeCodec(
       }
     } catch (e: EOFException) {
       // Provide more context if the server ends the stream before sending a response.
-      val address = realConnection?.route()?.address()?.url()?.redact() ?: "unknown"
+      val address = realConnection?.route()?.address()?.url?.redact() ?: "unknown"
       throw IOException("unexpected end of stream on $address", e)
     }
   }
@@ -383,8 +383,8 @@ class Http1ExchangeCodec(
     }
 
     override fun read(sink: Buffer, byteCount: Long): Long {
-      if (byteCount < 0) throw IllegalArgumentException("byteCount < 0: $byteCount")
-      if (closed) throw IllegalStateException("closed")
+      require(byteCount >= 0L) { "byteCount < 0: $byteCount" }
+      check(!closed) { "closed" }
       if (bytesRemaining == 0L) return -1
 
       val read = super.read(sink, minOf(bytesRemaining, byteCount))
@@ -422,7 +422,7 @@ class Http1ExchangeCodec(
     private var hasMoreChunks = true
 
     override fun read(sink: Buffer, byteCount: Long): Long {
-      require(byteCount >= 0) { "byteCount < 0: $byteCount" }
+      require(byteCount >= 0L) { "byteCount < 0: $byteCount" }
       check(!closed) { "closed" }
       if (!hasMoreChunks) return -1
 
@@ -450,7 +450,7 @@ class Http1ExchangeCodec(
       try {
         bytesRemainingInChunk = source.readHexadecimalUnsignedLong()
         val extensions = source.readUtf8LineStrict().trim()
-        if (bytesRemainingInChunk < 0 || extensions.isNotEmpty() && !extensions.startsWith(";")) {
+        if (bytesRemainingInChunk < 0L || extensions.isNotEmpty() && !extensions.startsWith(";")) {
           throw ProtocolException("expected chunk size and optional extensions" +
               " but was \"$bytesRemainingInChunk$extensions\"")
         }
@@ -482,7 +482,7 @@ class Http1ExchangeCodec(
     private var inputExhausted: Boolean = false
 
     override fun read(sink: Buffer, byteCount: Long): Long {
-      require(byteCount >= 0) { "byteCount < 0: $byteCount" }
+      require(byteCount >= 0L) { "byteCount < 0: $byteCount" }
       check(!closed) { "closed" }
       if (inputExhausted) return -1
 

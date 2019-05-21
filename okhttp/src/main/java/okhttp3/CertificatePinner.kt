@@ -237,7 +237,7 @@ data class CertificatePinner internal constructor(
       if (pattern.startsWith(WILDCARD)) {
         val firstDot = hostname.indexOf('.')
         return hostname.length - firstDot - 1 == canonicalHostname.length &&
-            hostname.startsWith(canonicalHostname, ignoreCase = false, startIndex = firstDot + 1)
+            hostname.startsWith(canonicalHostname, startIndex = firstDot + 1)
       }
       return hostname == canonicalHostname
     }
@@ -292,10 +292,10 @@ data class CertificatePinner internal constructor(
     internal fun newPin(pattern: String, pin: String): Pin {
       val canonicalHostname = when {
         pattern.startsWith(WILDCARD) -> {
-          HttpUrl.get("http://${pattern.substring(WILDCARD.length)}").host()
+          HttpUrl.get("http://${pattern.substring(WILDCARD.length)}").host
         }
         else -> {
-          HttpUrl.get("http://$pattern").host()
+          HttpUrl.get("http://$pattern").host
         }
       }
 

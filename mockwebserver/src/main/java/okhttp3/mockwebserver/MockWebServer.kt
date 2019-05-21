@@ -22,7 +22,6 @@ import okhttp3.HttpUrl
 import okhttp3.Protocol
 import okhttp3.Request
 import okhttp3.Response
-import okhttp3.internal.Util
 import okhttp3.internal.addHeaderLenient
 import okhttp3.internal.closeQuietly
 import okhttp3.internal.duplex.MwsDuplexAccess
@@ -34,6 +33,7 @@ import okhttp3.internal.http2.Http2Connection
 import okhttp3.internal.http2.Http2Stream
 import okhttp3.internal.immutableListOf
 import okhttp3.internal.platform.Platform
+import okhttp3.internal.threadFactory
 import okhttp3.internal.toImmutableList
 import okhttp3.internal.ws.RealWebSocket
 import okhttp3.internal.ws.WebSocketProtocol
@@ -92,7 +92,6 @@ import javax.net.ssl.SSLSocket
 import javax.net.ssl.SSLSocketFactory
 import javax.net.ssl.TrustManager
 import javax.net.ssl.X509TrustManager
-import kotlin.math.min
 
 /**
  * A scriptable web server. Callers supply canned responses and the server replays them upon request
@@ -319,7 +318,7 @@ class MockWebServer : ExternalResource(), Closeable {
     require(!started) { "start() already called" }
     started = true
 
-    executor = Executors.newCachedThreadPool(Util.threadFactory("MockWebServer", false))
+    executor = Executors.newCachedThreadPool(threadFactory("MockWebServer", false))
     this.inetSocketAddress = inetSocketAddress
 
     if (serverSocketFactory == null) {
@@ -514,9 +513,7 @@ class MockWebServer : ExternalResource(), Closeable {
       val sink = raw.sink().buffer()
       while (true) {
         val socketPolicy = dispatcher.peek().getSocketPolicy()
-        if (!processOneRequest(raw, source, sink)) {
-          throw IllegalStateException("Tunnel without any CONNECT!")
-        }
+        check(processOneRequest(raw, source, sink)) { "Tunnel without any CONNECT!" }
         if (socketPolicy === UPGRADE_TO_SSL_AT_END) return
       }
     }
@@ -659,7 +656,7 @@ class MockWebServer : ExternalResource(), Closeable {
     val chunkSizes = ArrayList<Int>()
     val policy = dispatcher.peek()
     if (contentLength != -1L) {
-      hasBody = contentLength > 0
+      hasBody = contentLength > 0L
       throttledTransfer(policy, socket, source, requestBody.buffer(), contentLength, true)
     } else if (chunked) {
       hasBody = true
@@ -676,9 +673,9 @@ class MockWebServer : ExternalResource(), Closeable {
       }
     }
 
-    val method = request.substring(0, request.indexOf(' '))
-    if (hasBody && !HttpMethod.permitsRequestBody(method)) {
-      throw IllegalArgumentException("Request must not have a body: $request")
+    val method = request.substringBefore(' ')
+    require(!hasBody || HttpMethod.permitsRequestBody(method)) {
+      "Request must not have a body: $request"
     }
 
     return RecordedRequest(request, headers.build(), chunkSizes, requestBody.receivedByteCount,
@@ -800,10 +797,10 @@ class MockWebServer : ExternalResource(), Closeable {
       var b = 0L
       while (b < bytesPerPeriod) {
         // Ensure we do not read past the allotted bytes in this period.
-        var toRead = min(byteCountNum, bytesPerPeriod - b)
+        var toRead = minOf(byteCountNum, bytesPerPeriod - b)
         // Ensure we do not read past halfway if the policy will kill the connection.
         if (disconnectHalfway) {
-          toRead = min(toRead, byteCountNum - halfByteCount)
+          toRead = minOf(toRead, byteCountNum - halfByteCount)
         }
 
         val read = source.read(buffer, toRead)
@@ -848,7 +845,7 @@ class MockWebServer : ExternalResource(), Closeable {
 
     @Throws(IOException::class)
     override fun write(source: Buffer, byteCount: Long) {
-      val toRead = min(remainingByteCount, byteCount)
+      val toRead = minOf(remainingByteCount, byteCount)
       if (toRead > 0L) {
         source.read(buffer, toRead)
       }
@@ -1022,7 +1019,7 @@ class MockWebServer : ExternalResource(), Closeable {
     ) {
       for (pushPromise in promises) {
         val pushedHeaders = mutableListOf<Header>()
-        pushedHeaders.add(Header(Header.TARGET_AUTHORITY, url(pushPromise.path).host()))
+        pushedHeaders.add(Header(Header.TARGET_AUTHORITY, url(pushPromise.path).host))
         pushedHeaders.add(Header(Header.TARGET_METHOD, pushPromise.method))
         pushedHeaders.add(Header(Header.TARGET_PATH, pushPromise.path))
         val pushPromiseHeaders = pushPromise.headers

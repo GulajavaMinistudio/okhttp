@@ -15,7 +15,7 @@
  */
 package okhttp3
 
-import okhttp3.internal.Util
+import okhttp3.internal.EMPTY_HEADERS
 import okhttp3.internal.addHeaderLenient
 import okhttp3.internal.cache.CacheRequest
 import okhttp3.internal.cache.CacheStrategy
@@ -352,7 +352,7 @@ class Cache internal constructor(
       }
 
       override fun remove() {
-        if (!canRemove) throw IllegalStateException("remove() before next()")
+        check(canRemove) { "remove() before next()" }
         delegate.remove()
       }
     }
@@ -724,12 +724,11 @@ class Cache internal constructor(
     fun key(url: HttpUrl): String = url.toString().encodeUtf8().md5().hex()
 
     @Throws(IOException::class)
-    @JvmStatic
     internal fun readInt(source: BufferedSource): Int {
       try {
         val result = source.readDecimalLong()
         val line = source.readUtf8LineStrict()
-        if (result < 0 || result > Integer.MAX_VALUE || line.isNotEmpty()) {
+        if (result < 0L || result > Integer.MAX_VALUE || line.isNotEmpty()) {
           throw IOException("expected an int but was \"$result$line\"")
         }
         return result.toInt()
@@ -753,11 +752,7 @@ class Cache internal constructor(
     }
 
     /** Returns true if a Vary header contains an asterisk. Such responses cannot be cached. */
-    fun Response.hasVaryAll(): Boolean {
-      val responseHeaders = headers()
-      val varyFields = responseHeaders.varyFields()
-      return varyFields.contains("*")
-    }
+    fun Response.hasVaryAll() = "*" in headers().varyFields()
 
     /**
      * Returns the names of the request headers that need to be checked for equality when caching.
@@ -797,12 +792,12 @@ class Cache internal constructor(
      */
     private fun varyHeaders(requestHeaders: Headers, responseHeaders: Headers): Headers {
       val varyFields = responseHeaders.varyFields()
-      if (varyFields.isEmpty()) return Util.EMPTY_HEADERS
+      if (varyFields.isEmpty()) return EMPTY_HEADERS
 
       val result = Headers.Builder()
       for (i in 0 until requestHeaders.size) {
         val fieldName = requestHeaders.name(i)
-        if (varyFields.contains(fieldName)) {
+        if (fieldName in varyFields) {
           result.add(fieldName, requestHeaders.value(i))
         }
       }

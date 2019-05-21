@@ -15,16 +15,20 @@
  */
 package okhttp3.internal.http2
 
-import okhttp3.internal.Util
+import okhttp3.internal.EMPTY_BYTE_ARRAY
+import okhttp3.internal.EMPTY_HEADERS
 import okhttp3.internal.closeQuietly
 import okhttp3.internal.connectionName
 import okhttp3.internal.execute
+import okhttp3.internal.format
 import okhttp3.internal.http2.ErrorCode.REFUSED_STREAM
 import okhttp3.internal.http2.Settings.Companion.DEFAULT_INITIAL_WINDOW_SIZE
 import okhttp3.internal.ignoreIoExceptions
 import okhttp3.internal.platform.Platform
 import okhttp3.internal.platform.Platform.Companion.INFO
+import okhttp3.internal.threadFactory
 import okhttp3.internal.threadName
+import okhttp3.internal.toHeaders
 import okhttp3.internal.tryExecute
 import okio.Buffer
 import okio.BufferedSink
@@ -85,12 +89,12 @@ class Http2Connection internal constructor(builder: Builder) : Closeable {
 
   /** Asynchronously writes frames to the outgoing socket.  */
   private val writerExecutor = ScheduledThreadPoolExecutor(1,
-      Util.threadFactory(Util.format("OkHttp %s Writer", connectionName), false))
+      threadFactory(format("OkHttp %s Writer", connectionName), false))
 
   /** Ensures push promise callbacks events are sent in order per stream.  */
   // Like newSingleThreadExecutor, except lazy creates the thread.
   private val pushExecutor = ThreadPoolExecutor(0, 1, 60L, TimeUnit.SECONDS, LinkedBlockingQueue(),
-      Util.threadFactory(Util.format("OkHttp %s Push Observer", connectionName), true))
+      threadFactory(format("OkHttp %s Push Observer", connectionName), true))
 
   /** User code to run in response to push promise events.  */
   private val pushObserver: PushObserver = builder.pushObserver
@@ -291,7 +295,7 @@ class Http2Connection internal constructor(builder: Builder) : Closeable {
       var toWrite: Int
       synchronized(this@Http2Connection) {
         try {
-          while (bytesLeftInWriteWindow <= 0) {
+          while (bytesLeftInWriteWindow <= 0L) {
             // Before blocking, confirm that the stream we're writing is still open. It's possible
             // that the stream has since been closed (such as if this write timed out.)
             if (!streams.containsKey(streamId)) {
@@ -410,7 +414,7 @@ class Http2Connection internal constructor(builder: Builder) : Closeable {
       }
       // TODO: propagate exception message into debugData.
       // TODO: configure a timeout on the reader so that it doesn’t block forever.
-      writer.goAway(lastGoodStreamId, statusCode, Util.EMPTY_BYTE_ARRAY)
+      writer.goAway(lastGoodStreamId, statusCode, EMPTY_BYTE_ARRAY)
     }
   }
 
@@ -517,27 +521,23 @@ class Http2Connection internal constructor(builder: Builder) : Closeable {
       connectionName: String = socket.connectionName(),
       source: BufferedSource = socket.source().buffer(),
       sink: BufferedSink = socket.sink().buffer()
-    ): Builder {
+    ) = apply {
       this.socket = socket
       this.connectionName = connectionName
       this.source = source
       this.sink = sink
-      return this
     }
 
-    fun listener(listener: Listener): Builder {
+    fun listener(listener: Listener) = apply {
       this.listener = listener
-      return this
     }
 
-    fun pushObserver(pushObserver: PushObserver): Builder {
+    fun pushObserver(pushObserver: PushObserver) = apply {
       this.pushObserver = pushObserver
-      return this
     }
 
-    fun pingIntervalMillis(pingIntervalMillis: Int): Builder {
+    fun pingIntervalMillis(pingIntervalMillis: Int) = apply {
       this.pingIntervalMillis = pingIntervalMillis
-      return this
     }
 
     fun build(): Http2Connection {
@@ -592,7 +592,7 @@ class Http2Connection internal constructor(builder: Builder) : Closeable {
       }
       dataStream.receiveData(source, length)
       if (inFinished) {
-        dataStream.receiveHeaders(Util.EMPTY_HEADERS, true)
+        dataStream.receiveHeaders(EMPTY_HEADERS, true)
       }
     }
 
@@ -621,7 +621,7 @@ class Http2Connection internal constructor(builder: Builder) : Closeable {
           if (streamId % 2 == nextStreamId % 2) return
 
           // Create a stream.
-          val headers = Util.toHeaders(headerBlock)
+          val headers = toHeaders(headerBlock)
           val newStream = Http2Stream(streamId, this@Http2Connection, false, inFinished, headers)
           lastGoodStreamId = streamId
           streams[streamId] = newStream
@@ -640,7 +640,7 @@ class Http2Connection internal constructor(builder: Builder) : Closeable {
       }
 
       // Update an existing stream.
-      stream!!.receiveHeaders(Util.toHeaders(headerBlock), inFinished)
+      stream!!.receiveHeaders(toHeaders(headerBlock), inFinished)
     }
 
     override fun rstStream(streamId: Int, errorCode: ErrorCode) {
@@ -790,7 +790,7 @@ class Http2Connection internal constructor(builder: Builder) : Closeable {
 
   internal fun pushRequestLater(streamId: Int, requestHeaders: List<Header>) {
     synchronized(this) {
-      if (currentPushRequests.contains(streamId)) {
+      if (streamId in currentPushRequests) {
         writeSynResetLater(streamId, ErrorCode.PROTOCOL_ERROR)
         return
       }
@@ -911,6 +911,6 @@ class Http2Connection internal constructor(builder: Builder) : Closeable {
      */
     private val listenerExecutor = ThreadPoolExecutor(0,
         Integer.MAX_VALUE, 60L, TimeUnit.SECONDS, SynchronousQueue(),
-        Util.threadFactory("OkHttp Http2Connection", true))
+        threadFactory("OkHttp Http2Connection", true))
   }
 }

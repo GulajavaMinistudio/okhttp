@@ -50,7 +50,7 @@ class RouteSelector(
   private val postponedRoutes = mutableListOf<Route>()
 
   init {
-    resetNextProxy(address.url(), address.proxy())
+    resetNextProxy(address.url, address.proxy)
   }
 
   /**
@@ -99,7 +99,7 @@ class RouteSelector(
       listOf(proxy)
     } else {
       // Try each of the ProxySelector choices until one connection succeeds.
-      val proxiesOrNull = address.proxySelector().select(url.uri())
+      val proxiesOrNull = address.proxySelector.select(url.toUri())
       if (proxiesOrNull != null && proxiesOrNull.isNotEmpty()) {
         proxiesOrNull.toImmutableList()
       } else {
@@ -117,7 +117,7 @@ class RouteSelector(
   private fun nextProxy(): Proxy {
     if (!hasNextProxy()) {
       throw SocketException(
-          "No route to ${address.url().host()}; exhausted proxy configurations: $proxies")
+          "No route to ${address.url.host}; exhausted proxy configurations: $proxies")
     }
     val result = proxies[nextProxyIndex++]
     resetNextInetSocketAddress(result)
@@ -134,8 +134,8 @@ class RouteSelector(
     val socketHost: String
     val socketPort: Int
     if (proxy.type() == Proxy.Type.DIRECT || proxy.type() == Proxy.Type.SOCKS) {
-      socketHost = address.url().host()
-      socketPort = address.url().port()
+      socketHost = address.url.host
+      socketPort = address.url.port
     } else {
       val proxyAddress = proxy.address()
       require(proxyAddress is InetSocketAddress) {
@@ -155,9 +155,9 @@ class RouteSelector(
       eventListener.dnsStart(call, socketHost)
 
       // Try each address for best behavior in mixed IPv4/IPv6 environments.
-      val addresses = address.dns().lookup(socketHost)
+      val addresses = address.dns.lookup(socketHost)
       if (addresses.isEmpty()) {
-        throw UnknownHostException("${address.dns()} returned no addresses for $socketHost")
+        throw UnknownHostException("${address.dns} returned no addresses for $socketHost")
       }
 
       eventListener.dnsEnd(call, socketHost, addresses)
@@ -182,7 +182,6 @@ class RouteSelector(
 
   companion object {
     /** Obtain a host string containing either an actual host name or a numeric IP address. */
-    @JvmStatic
     val InetSocketAddress.socketHost: String get() {
       // The InetSocketAddress was specified with a string (either a numeric IP or a host name). If
       // it is a name, all IPs for that name should be tried. If it is an IP address, only that IP
