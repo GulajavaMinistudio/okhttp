@@ -23,7 +23,6 @@ import okhttp3.HttpUrl
 import okhttp3.RequestBody
 import okhttp3.ResponseBody
 import okhttp3.internal.http2.Header
-import okhttp3.internal.platform.Platform
 import okio.BufferedSource
 import okio.ByteString.Companion.decodeHex
 import okio.Options
@@ -38,7 +37,6 @@ import java.util.Locale
 import java.util.TimeZone
 import java.util.concurrent.ThreadFactory
 import java.util.concurrent.TimeUnit
-import javax.net.ssl.X509TrustManager
 import kotlin.text.Charsets.UTF_32BE
 import kotlin.text.Charsets.UTF_32LE
 
@@ -138,14 +136,14 @@ fun nonEmptyIntersection(
   return false
 }
 
-fun hostHeader(url: HttpUrl, includeDefaultPort: Boolean): String {
-  val host = if (":" in url.host) {
-    "[${url.host}]"
+fun HttpUrl.toHostHeader(includeDefaultPort: Boolean = false): String {
+  val host = if (":" in host) {
+    "[$host]"
   } else {
-    url.host
+    host
   }
-  return if (includeDefaultPort || url.port != HttpUrl.defaultPort(url.scheme)) {
-    "$host:${url.port}"
+  return if (includeDefaultPort || port != HttpUrl.defaultPort(scheme)) {
+    "$host:$port"
   } else {
     host
   }
@@ -162,81 +160,78 @@ fun concat(array: Array<String>, value: String): Array<String> {
 }
 
 /**
- * Increments [pos] until [input] is not ASCII whitespace. Stops at [limit].
+ * Increments [startIndex] until [this] is not ASCII whitespace. Stops at [endIndex].
  */
-fun skipLeadingAsciiWhitespace(input: String, pos: Int, limit: Int): Int {
-  for (i in pos until limit) {
-    when (input[i]) {
+fun String.indexOfFirstNonAsciiWhitespace(startIndex: Int = 0, endIndex: Int = length): Int {
+  for (i in startIndex until endIndex) {
+    when (this[i]) {
       '\t', '\n', '\u000C', '\r', ' ' -> Unit
       else -> return i
     }
   }
-  return limit
+  return endIndex
 }
 
 /**
- * Decrements [limit] until `input[limit - 1]` is not ASCII whitespace. Stops at [pos].
+ * Decrements [endIndex] until `input[endIndex - 1]` is not ASCII whitespace. Stops at [startIndex].
  */
-fun skipTrailingAsciiWhitespace(input: String, pos: Int, limit: Int): Int {
-  for (i in limit - 1 downTo pos) {
-    when (input[i]) {
+fun String.indexOfLastNonAsciiWhitespace(startIndex: Int = 0, endIndex: Int = length): Int {
+  for (i in endIndex - 1 downTo startIndex) {
+    when (this[i]) {
       '\t', '\n', '\u000C', '\r', ' ' -> Unit
       else -> return i + 1
     }
   }
-  return pos
+  return startIndex
 }
 
-/** Equivalent to `string.substring(pos, limit).trim()`.  */
-fun trimSubstring(string: String, pos: Int, limit: Int): String {
-  val start = skipLeadingAsciiWhitespace(string, pos, limit)
-  val end = skipTrailingAsciiWhitespace(string, start, limit)
-  return string.substring(start, end)
+/** Equivalent to `string.substring(startIndex, endIndex).trim()`.  */
+fun String.trimSubstring(startIndex: Int = 0, endIndex: Int = length): String {
+  val start = indexOfFirstNonAsciiWhitespace(startIndex, endIndex)
+  val end = indexOfLastNonAsciiWhitespace(start, endIndex)
+  return substring(start, end)
 }
 
 /**
- * Returns the index of the first character in [input] that contains a character in [delimiters].
- * Returns limit if there is no such character.
+ * Returns the index of the first character in [this] that contains a character in [delimiters].
+ * Returns endIndex if there is no such character.
  */
-fun delimiterOffset(input: String, pos: Int, limit: Int, delimiters: String): Int {
-  for (i in pos until limit) {
-    if (input[i] in delimiters) return i
+fun String.delimiterOffset(delimiters: String, startIndex: Int = 0, endIndex: Int = length): Int {
+  for (i in startIndex until endIndex) {
+    if (this[i] in delimiters) return i
   }
-  return limit
+  return endIndex
 }
 
 /**
- * Returns the index of the first character in [input] that is [delimiter]. Returns
- * limit if there is no such character.
+ * Returns the index of the first character in [this] that is [delimiter]. Returns
+ * endIndex if there is no such character.
  */
-fun delimiterOffset(input: String, pos: Int, limit: Int, delimiter: Char): Int {
-  for (i in pos until limit) {
-    if (input[i] == delimiter) return i
+fun String.delimiterOffset(delimiter: Char, startIndex: Int = 0, endIndex: Int = length): Int {
+  for (i in startIndex until endIndex) {
+    if (this[i] == delimiter) return i
   }
-  return limit
+  return endIndex
 }
 
 /**
- * Returns the index of the first character in [input] that is either a control character
- * (like `\u0000` or `\n`) or a non-ASCII character. Returns -1 if [input] has no such
+ * Returns the index of the first character in [this] that is either a control character
+ * (like `\u0000` or `\n`) or a non-ASCII character. Returns -1 if [this] has no such
  * characters.
  */
-fun indexOfControlOrNonAscii(input: String): Int {
-  var i = 0
-  val length = input.length
-  while (i < length) {
-    val c = input[i]
+fun String.indexOfControlOrNonAscii(): Int {
+  for (i in 0 until length) {
+    val c = this[i]
     if (c <= '\u001f' || c >= '\u007f') {
       return i
     }
-    i++
   }
   return -1
 }
 
-/** Returns true if [host] is not a host name and might be an IP address.  */
-fun verifyAsIpAddress(host: String): Boolean {
-  return VERIFY_AS_IP_ADDRESS.matches(host)
+/** Returns true if [this] is not a host name and might be an IP address.  */
+fun String.canParseAsIpAddress(): Boolean {
+  return VERIFY_AS_IP_ADDRESS.matches(this)
 }
 
 /** Returns a [Locale.US] formatted [String].  */
@@ -245,14 +240,14 @@ fun format(format: String, vararg args: Any): String {
 }
 
 @Throws(IOException::class)
-fun bomAwareCharset(source: BufferedSource, charset: Charset): Charset {
-  return when (source.select(UNICODE_BOMS)) {
+fun BufferedSource.readBomAsCharset(default: Charset): Charset {
+  return when (select(UNICODE_BOMS)) {
     0 -> UTF_8
     1 -> UTF_16BE
     2 -> UTF_16LE
     3 -> UTF_32BE
     4 -> UTF_32LE
-    -1 -> charset
+    -1 -> default
     else -> throw AssertionError()
   }
 }
@@ -273,24 +268,21 @@ fun decodeHexDigit(c: Char): Int = when (c) {
   else -> -1
 }
 
-fun platformTrustManager(): X509TrustManager = Platform.get().platformTrustManager()
-
-fun toHeaders(headerBlock: List<Header>): Headers {
+fun List<Header>.toHeaders(): Headers {
   val builder = Headers.Builder()
-  for ((name, value) in headerBlock) {
+  for ((name, value) in this) {
     addHeaderLenient(builder, name.utf8(), value.utf8())
   }
   return builder.build()
 }
 
-fun toHeaderBlock(headers: Headers): List<Header> = (0 until headers.size).map {
-  Header(headers.name(it), headers.value(it))
+fun Headers.toHeaderList(): List<Header> = (0 until size).map {
+  Header(name(it), value(it))
 }
 
-/** Returns true if an HTTP request for [a] and [b] can reuse a connection.  */
-fun sameConnection(a: HttpUrl, b: HttpUrl): Boolean = (a.host == b.host &&
-    a.port == b.port &&
-    a.scheme == b.scheme)
+/** Returns true if an HTTP request for [this] and [other] can reuse a connection. */
+fun HttpUrl.canReuseConnectionFor(other: HttpUrl): Boolean = host == other.host &&
+    port == other.port &&
+    scheme == other.scheme
 
-fun eventListenerFactory(listener: EventListener): EventListener.Factory =
-    EventListener.Factory { listener }
+fun EventListener.asFactory() = EventListener.Factory { this }

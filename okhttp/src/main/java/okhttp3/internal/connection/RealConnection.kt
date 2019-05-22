@@ -33,7 +33,7 @@ import okhttp3.Response
 import okhttp3.Route
 import okhttp3.internal.EMPTY_RESPONSE
 import okhttp3.internal.closeQuietly
-import okhttp3.internal.hostHeader
+import okhttp3.internal.toHostHeader
 import okhttp3.internal.http.ExchangeCodec
 import okhttp3.internal.http1.Http1ExchangeCodec
 import okhttp3.internal.http2.ConnectionShutdownException
@@ -179,8 +179,8 @@ class RealConnection(
         eventListener.connectEnd(call, route.socketAddress(), route.proxy(), protocol)
         break
       } catch (e: IOException) {
-        socket.closeQuietly()
-        rawSocket.closeQuietly()
+        socket?.closeQuietly()
+        rawSocket?.closeQuietly()
         socket = null
         rawSocket = null
         source = null
@@ -237,7 +237,7 @@ class RealConnection(
 
       // The proxy decided to close the connection after an auth challenge. We need to create a new
       // connection, but this time with the auth credentials.
-      rawSocket.closeQuietly()
+      rawSocket?.closeQuietly()
       rawSocket = null
       sink = null
       source = null
@@ -391,7 +391,7 @@ class RealConnection(
         Platform.get().afterHandshake(sslSocket)
       }
       if (!success) {
-        sslSocket.closeQuietly()
+        sslSocket?.closeQuietly()
       }
     }
   }
@@ -409,7 +409,7 @@ class RealConnection(
   ): Request? {
     var nextRequest = tunnelRequest
     // Make an SSL Tunnel on the first message pair of each SSL + proxy connection.
-    val requestLine = """CONNECT ${hostHeader(url, true)} HTTP/1.1"""
+    val requestLine = "CONNECT ${url.toHostHeader(includeDefaultPort = true)} HTTP/1.1"
     while (true) {
       val source = this.source!!
       val sink = this.sink!!
@@ -463,7 +463,7 @@ class RealConnection(
     val proxyConnectRequest = Request.Builder()
         .url(route.address().url)
         .method("CONNECT", null)
-        .header("Host", hostHeader(route.address().url, true))
+        .header("Host", route.address().url.toHostHeader(includeDefaultPort = true))
         .header("Proxy-Connection", "Keep-Alive") // For HTTP/1.0 proxies like Squid.
         .header("User-Agent", userAgent)
         .build()
@@ -592,7 +592,7 @@ class RealConnection(
 
   fun cancel() {
     // Close the raw socket so we don't end up doing synchronous I/O.
-    rawSocket.closeQuietly()
+    rawSocket?.closeQuietly()
   }
 
   override fun socket(): Socket = socket!!

@@ -23,7 +23,7 @@ import okhttp3.OkHttpClient
 import okhttp3.Route
 import okhttp3.internal.closeQuietly
 import okhttp3.internal.http.ExchangeCodec
-import okhttp3.internal.sameConnection
+import okhttp3.internal.canReuseConnectionFor
 import java.io.IOException
 import java.net.Socket
 
@@ -179,7 +179,7 @@ class ExchangeFinder(
         }
       }
     }
-    toClose.closeQuietly()
+    toClose?.closeQuietly()
 
     if (releasedConnection != null) {
       eventListener.connectionReleased(call, releasedConnection!!)
@@ -259,7 +259,7 @@ class ExchangeFinder(
         transmitter.acquireConnectionNoEvents(result!!)
       }
     }
-    socket.closeQuietly()
+    socket?.closeQuietly()
 
     eventListener.connectionAcquired(call, result!!)
     return result!!
@@ -307,6 +307,6 @@ class ExchangeFinder(
   private fun retryCurrentRoute(): Boolean {
     return transmitter.connection != null &&
         transmitter.connection!!.routeFailureCount == 0 &&
-        sameConnection(transmitter.connection!!.route().address().url, address.url)
+        transmitter.connection!!.route().address().url.canReuseConnectionFor(address.url)
   }
 }

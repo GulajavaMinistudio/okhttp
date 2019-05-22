@@ -19,8 +19,8 @@ import okhttp3.internal.UTC
 import okhttp3.internal.delimiterOffset
 import okhttp3.internal.indexOfControlOrNonAscii
 import okhttp3.internal.trimSubstring
-import okhttp3.internal.verifyAsIpAddress
 import okhttp3.internal.http.HttpDate
+import okhttp3.internal.canParseAsIpAddress
 import okhttp3.internal.publicsuffix.PublicSuffixDatabase
 import okhttp3.internal.toCanonicalHost
 import java.util.Calendar
@@ -309,7 +309,7 @@ data class Cookie private constructor(
 
       return urlHost.endsWith(domain) &&
           urlHost[urlHost.length - domain.length - 1] == '.' &&
-          !verifyAsIpAddress(urlHost)
+          !urlHost.canParseAsIpAddress()
     }
 
     private fun pathMatch(url: HttpUrl, path: String): Boolean {
@@ -336,18 +336,16 @@ data class Cookie private constructor(
         parse(System.currentTimeMillis(), url, setCookie)
 
     internal fun parse(currentTimeMillis: Long, url: HttpUrl, setCookie: String): Cookie? {
-      var pos = 0
-      val limit = setCookie.length
-      val cookiePairEnd = delimiterOffset(setCookie, pos, limit, ';')
+      val cookiePairEnd = setCookie.delimiterOffset(';')
 
-      val pairEqualsSign = delimiterOffset(setCookie, pos, cookiePairEnd, '=')
+      val pairEqualsSign = setCookie.delimiterOffset('=', endIndex = cookiePairEnd)
       if (pairEqualsSign == cookiePairEnd) return null
 
-      val cookieName = trimSubstring(setCookie, pos, pairEqualsSign)
-      if (cookieName.isEmpty() || indexOfControlOrNonAscii(cookieName) != -1) return null
+      val cookieName = setCookie.trimSubstring(endIndex = pairEqualsSign)
+      if (cookieName.isEmpty() || cookieName.indexOfControlOrNonAscii() != -1) return null
 
-      val cookieValue = trimSubstring(setCookie, pairEqualsSign + 1, cookiePairEnd)
-      if (indexOfControlOrNonAscii(cookieValue) != -1) return null
+      val cookieValue = setCookie.trimSubstring(pairEqualsSign + 1, cookiePairEnd)
+      if (cookieValue.indexOfControlOrNonAscii() != -1) return null
 
       var expiresAt = HttpDate.MAX_DATE
       var deltaSeconds = -1L
@@ -358,14 +356,15 @@ data class Cookie private constructor(
       var hostOnly = true
       var persistent = false
 
-      pos = cookiePairEnd + 1
+      var pos = cookiePairEnd + 1
+      val limit = setCookie.length
       while (pos < limit) {
-        val attributePairEnd = delimiterOffset(setCookie, pos, limit, ';')
+        val attributePairEnd = setCookie.delimiterOffset(';', pos, limit)
 
-        val attributeEqualsSign = delimiterOffset(setCookie, pos, attributePairEnd, '=')
-        val attributeName = trimSubstring(setCookie, pos, attributeEqualsSign)
+        val attributeEqualsSign = setCookie.delimiterOffset('=', pos, attributePairEnd)
+        val attributeName = setCookie.trimSubstring(pos, attributeEqualsSign)
         val attributeValue = if (attributeEqualsSign < attributePairEnd) {
-          trimSubstring(setCookie, attributeEqualsSign + 1, attributePairEnd)
+          setCookie.trimSubstring(attributeEqualsSign + 1, attributePairEnd)
         } else {
           ""
         }
