@@ -36,7 +36,7 @@ import java.util.concurrent.atomic.AtomicInteger
 
 internal class RealCall private constructor(
   val client: OkHttpClient,
-  /** The application's original request unadulterated by redirects or auth headers.  */
+  /** The application's original request unadulterated by redirects or auth headers. */
   val originalRequest: Request,
   val forWebSocket: Boolean
 ) : Call {
@@ -101,7 +101,7 @@ internal class RealCall private constructor(
       this.callsPerHost = other.callsPerHost
     }
 
-    fun host(): String = originalRequest.url().host
+    fun host(): String = originalRequest.url.host
 
     fun request(): Request = originalRequest
 
@@ -161,7 +161,7 @@ internal class RealCall private constructor(
         " to " + redactedUrl())
   }
 
-  fun redactedUrl(): String = originalRequest.url().redact()
+  fun redactedUrl(): String = originalRequest.url.redact()
 
   @Throws(IOException::class)
   fun getResponseWithInterceptorChain(): Response {
@@ -170,7 +170,7 @@ internal class RealCall private constructor(
     interceptors.addAll(client.interceptors())
     interceptors.add(RetryAndFollowUpInterceptor(client))
     interceptors.add(BridgeInterceptor(client.cookieJar()))
-    interceptors.add(CacheInterceptor(client.internalCache()))
+    interceptors.add(CacheInterceptor(client.cache()))
     interceptors.add(ConnectInterceptor(client))
     if (!forWebSocket) {
       interceptors.addAll(client.networkInterceptors())

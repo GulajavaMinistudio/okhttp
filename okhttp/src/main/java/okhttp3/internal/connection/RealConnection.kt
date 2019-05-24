@@ -74,7 +74,7 @@ class RealConnection(
 
   // The fields below are initialized by connect() and never reassigned.
 
-  /** The low-level TCP socket.  */
+  /** The low-level TCP socket. */
   private var rawSocket: Socket? = null
 
   /**
@@ -229,7 +229,7 @@ class RealConnection(
     eventListener: EventListener
   ) {
     var tunnelRequest: Request = createTunnelRequest()
-    val url = tunnelRequest.url()
+    val url = tunnelRequest.url
     for (i in 0 until MAX_TUNNEL_ATTEMPTS) {
       connectSocket(connectTimeout, readTimeout, call, eventListener)
       tunnelRequest = createTunnel(readTimeout, writeTimeout, tunnelRequest, url)
@@ -416,7 +416,7 @@ class RealConnection(
       val tunnelCodec = Http1ExchangeCodec(null, null, source, sink)
       source.timeout().timeout(readTimeout.toLong(), MILLISECONDS)
       sink.timeout().timeout(writeTimeout.toLong(), MILLISECONDS)
-      tunnelCodec.writeRequest(nextRequest.headers(), requestLine)
+      tunnelCodec.writeRequest(nextRequest.headers, requestLine)
       tunnelCodec.finishRequest()
       val response = tunnelCodec.readResponseHeaders(false)!!
           .request(nextRequest)
@@ -597,7 +597,7 @@ class RealConnection(
 
   override fun socket(): Socket = socket!!
 
-  /** Returns true if this connection is ready to host new streams.  */
+  /** Returns true if this connection is ready to host new streams. */
   fun isHealthy(doExtensiveChecks: Boolean): Boolean {
     val socket = this.socket!!
     val source = this.source!!
@@ -629,13 +629,13 @@ class RealConnection(
     return true
   }
 
-  /** Refuse incoming streams.  */
+  /** Refuse incoming streams. */
   @Throws(IOException::class)
   override fun onStream(stream: Http2Stream) {
     stream.close(ErrorCode.REFUSED_STREAM, null)
   }
 
-  /** When settings are received, adjust the allocation limit.  */
+  /** When settings are received, adjust the allocation limit. */
   override fun onSettings(connection: Http2Connection) {
     synchronized(connectionPool) {
       allocationLimit = connection.maxConcurrentStreams()

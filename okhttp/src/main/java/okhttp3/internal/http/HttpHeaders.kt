@@ -131,7 +131,7 @@ private fun Buffer.readChallengeHeader(result: MutableList<Challenge>) {
   }
 }
 
-/** Returns true if any commas were skipped.  */
+/** Returns true if any commas were skipped. */
 private fun Buffer.skipCommasAndWhitespace(): Boolean {
   var commaFound = false
   loop@ while (!exhausted()) {
@@ -212,7 +212,7 @@ fun CookieJar.receiveHeaders(url: HttpUrl, headers: Headers) {
  */
 fun Response.promisesBody(): Boolean {
   // HEAD requests never yield a body regardless of the response headers.
-  if (request().method() == "HEAD") {
+  if (request().method == "HEAD") {
     return false
   }
 

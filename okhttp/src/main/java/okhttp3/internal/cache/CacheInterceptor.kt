@@ -16,12 +16,12 @@
  */
 package okhttp3.internal.cache
 
+import okhttp3.Cache
 import okhttp3.Headers
 import okhttp3.Interceptor
 import okhttp3.Protocol
 import okhttp3.Response
 import okhttp3.internal.EMPTY_RESPONSE
-import okhttp3.internal.addHeaderLenient
 import okhttp3.internal.closeQuietly
 import okhttp3.internal.discard
 import okhttp3.internal.http.ExchangeCodec
@@ -37,8 +37,8 @@ import java.net.HttpURLConnection.HTTP_GATEWAY_TIMEOUT
 import java.net.HttpURLConnection.HTTP_NOT_MODIFIED
 import java.util.concurrent.TimeUnit.MILLISECONDS
 
-/** Serves requests from the cache and writes responses to the cache.  */
-class CacheInterceptor(internal val cache: InternalCache?) : Interceptor {
+/** Serves requests from the cache and writes responses to the cache. */
+class CacheInterceptor(internal val cache: Cache?) : Interceptor {
 
   @Throws(IOException::class)
   override fun intercept(chain: Interceptor.Chain): Response {
@@ -122,10 +122,10 @@ class CacheInterceptor(internal val cache: InternalCache?) : Interceptor {
         return cacheWritingResponse(cacheRequest, response)
       }
 
-      if (HttpMethod.invalidatesCache(networkRequest.method())) {
+      if (HttpMethod.invalidatesCache(networkRequest.method)) {
         try {
           cache.remove(networkRequest)
-        } catch (ignored: IOException) {
+        } catch (_: IOException) {
           // The cache cannot be written.
         }
       }
@@ -209,7 +209,7 @@ class CacheInterceptor(internal val cache: InternalCache?) : Interceptor {
       }
     }
 
-    /** Combines cached headers with a network headers as defined by RFC 7234, 4.3.4.  */
+    /** Combines cached headers with a network headers as defined by RFC 7234, 4.3.4. */
     private fun combine(cachedHeaders: Headers, networkHeaders: Headers): Headers {
       val result = Headers.Builder()
 
@@ -223,14 +223,14 @@ class CacheInterceptor(internal val cache: InternalCache?) : Interceptor {
         if (isContentSpecificHeader(fieldName) ||
             !isEndToEnd(fieldName) ||
             networkHeaders[fieldName] == null) {
-          addHeaderLenient(result, fieldName, value)
+          result.addLenient(fieldName, value)
         }
       }
 
       for (index in networkHeaders.names().indices) {
         val fieldName = networkHeaders.name(index)
         if (!isContentSpecificHeader(fieldName) && isEndToEnd(fieldName)) {
-          addHeaderLenient(result, fieldName, networkHeaders.value(index))
+          result.addLenient(fieldName, networkHeaders.value(index))
         }
       }
 

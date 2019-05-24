@@ -22,7 +22,7 @@ import okhttp3.OkHttpClient
 import okhttp3.Response
 import okhttp3.internal.http.RealInterceptorChain
 
-/** Opens a connection to the target server and proceeds to the next interceptor.  */
+/** Opens a connection to the target server and proceeds to the next interceptor. */
 class ConnectInterceptor(val client: OkHttpClient) : Interceptor {
 
   @Throws(IOException::class)
@@ -32,7 +32,7 @@ class ConnectInterceptor(val client: OkHttpClient) : Interceptor {
     val transmitter = realChain.transmitter()
 
     // We need the network to satisfy this request. Possibly for validating a conditional GET.
-    val doExtensiveHealthChecks = request.method() != "GET"
+    val doExtensiveHealthChecks = request.method != "GET"
     val exchange = transmitter.newExchange(chain, doExtensiveHealthChecks)
 
     return realChain.proceed(request, transmitter, exchange)

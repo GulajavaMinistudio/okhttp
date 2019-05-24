@@ -17,6 +17,7 @@
 package okhttp3.internal.connection
 
 import okhttp3.Address
+import okhttp3.ConnectionPool
 import okhttp3.Route
 import okhttp3.internal.closeQuietly
 import okhttp3.internal.connection.Transmitter.TransmitterReference
@@ -32,7 +33,7 @@ import java.util.concurrent.ThreadPoolExecutor
 import java.util.concurrent.TimeUnit
 
 class RealConnectionPool(
-  /** The maximum number of idle connections for each address.  */
+  /** The maximum number of idle connections for each address. */
   private val maxIdleConnections: Int,
   keepAliveDuration: Long,
   timeUnit: TimeUnit
@@ -234,7 +235,7 @@ class RealConnectionPool(
     return references.size
   }
 
-  /** Track a bad route in the route database. Other routes will be attempted first.  */
+  /** Track a bad route in the route database. Other routes will be attempted first. */
   fun connectFailed(failedRoute: Route, failure: IOException) {
     // Tell the proxy selector when we fail to connect on a fresh connection.
     if (failedRoute.proxy().type() != Proxy.Type.DIRECT) {
@@ -259,5 +260,7 @@ class RealConnectionPool(
         SynchronousQueue(),
         threadFactory("OkHttp ConnectionPool", true)
     )
+
+    fun get(connectionPool: ConnectionPool): RealConnectionPool = connectionPool.delegate
   }
 }
