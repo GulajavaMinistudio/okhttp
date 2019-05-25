@@ -18,10 +18,10 @@ package okhttp3
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.internal.canParseAsIpAddress
-import okhttp3.internal.decodeHexDigit
 import okhttp3.internal.delimiterOffset
 import okhttp3.internal.indexOfFirstNonAsciiWhitespace
 import okhttp3.internal.indexOfLastNonAsciiWhitespace
+import okhttp3.internal.parseHexDigit
 import okhttp3.internal.publicsuffix.PublicSuffixDatabase
 import okhttp3.internal.toCanonicalHost
 import okio.Buffer
@@ -511,7 +511,7 @@ class HttpUrl internal constructor(
     get() {
       val pathStart = url.indexOf('/', scheme.length + 3)
       val pathEnd = url.delimiterOffset("?#", pathStart, url.length)
-      val result = ArrayList<String>()
+      val result = mutableListOf<String>()
       var i = pathStart
       while (i < pathEnd) {
         i++ // Skip the '/'.
@@ -647,7 +647,7 @@ class HttpUrl internal constructor(
    */
   fun queryParameterValues(name: String): List<String?> {
     if (queryNamesAndValues == null) return emptyList()
-    val result = ArrayList<String?>()
+    val result = mutableListOf<String?>()
     for (i in 0 until queryNamesAndValues.size step 2) {
       if (name == queryNamesAndValues[i]) {
         result.add(queryNamesAndValues[i + 1])
@@ -1075,7 +1075,7 @@ class HttpUrl internal constructor(
 
     /** Encodes the query parameter using UTF-8 and adds it to this URL's query string. */
     fun addQueryParameter(name: String, value: String?) = apply {
-      if (encodedQueryNamesAndValues == null) encodedQueryNamesAndValues = ArrayList()
+      if (encodedQueryNamesAndValues == null) encodedQueryNamesAndValues = mutableListOf()
       encodedQueryNamesAndValues!!.add(name.canonicalize(
           encodeSet = QUERY_COMPONENT_ENCODE_SET,
           plusIsSpace = true
@@ -1088,7 +1088,7 @@ class HttpUrl internal constructor(
 
     /** Adds the pre-encoded query parameter to this URL's query string. */
     fun addEncodedQueryParameter(encodedName: String, encodedValue: String?) = apply {
-      if (encodedQueryNamesAndValues == null) encodedQueryNamesAndValues = ArrayList()
+      if (encodedQueryNamesAndValues == null) encodedQueryNamesAndValues = mutableListOf()
       encodedQueryNamesAndValues!!.add(encodedName.canonicalize(
           encodeSet = QUERY_COMPONENT_REENCODE_SET,
           alreadyEncoded = true,
@@ -1741,8 +1741,8 @@ class HttpUrl internal constructor(
       while (i < limit) {
         codePoint = encoded.codePointAt(i)
         if (codePoint == '%'.toInt() && i + 2 < limit) {
-          val d1 = decodeHexDigit(encoded[i + 1])
-          val d2 = decodeHexDigit(encoded[i + 2])
+          val d1 = encoded[i + 1].parseHexDigit()
+          val d2 = encoded[i + 2].parseHexDigit()
           if (d1 != -1 && d2 != -1) {
             writeByte((d1 shl 4) + d2)
             i += 2
@@ -1771,8 +1771,8 @@ class HttpUrl internal constructor(
     private fun String.isPercentEncoded(pos: Int, limit: Int): Boolean {
       return pos + 2 < limit &&
           this[pos] == '%' &&
-          decodeHexDigit(this[pos + 1]) != -1 &&
-          decodeHexDigit(this[pos + 2]) != -1
+          this[pos + 1].parseHexDigit() != -1 &&
+          this[pos + 2].parseHexDigit() != -1
     }
 
     /**

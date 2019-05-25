@@ -40,7 +40,6 @@ import java.nio.charset.Charset
 import java.nio.charset.StandardCharsets.UTF_16BE
 import java.nio.charset.StandardCharsets.UTF_16LE
 import java.nio.charset.StandardCharsets.UTF_8
-import java.util.ArrayList
 import java.util.Arrays
 import java.util.Collections
 import java.util.Comparator
@@ -113,7 +112,7 @@ fun Array<String>.intersect(
   other: Array<String>,
   comparator: Comparator<in String>
 ): Array<String> {
-  val result = ArrayList<String>()
+  val result = mutableListOf<String>()
   for (a in this) {
     for (b in other) {
       if (comparator.compare(a, b) == 0) {
@@ -273,10 +272,10 @@ fun checkDuration(name: String, duration: Long, unit: TimeUnit?): Int {
   return millis.toInt()
 }
 
-fun decodeHexDigit(c: Char): Int = when (c) {
-  in '0'..'9' -> c - '0'
-  in 'a'..'f' -> c - 'a' + 10
-  in 'A'..'F' -> c - 'A' + 10
+fun Char.parseHexDigit(): Int = when (this) {
+  in '0'..'9' -> this - '0'
+  in 'a'..'f' -> this - 'a' + 10
+  in 'A'..'F' -> this - 'A' + 10
   else -> -1
 }
 
