@@ -24,7 +24,7 @@ import okhttp3.MediaType
 import okhttp3.OkHttpClient
 import okhttp3.Protocol
 import okhttp3.Request
-import okhttp3.RequestBody
+import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Response
 import okhttp3.internal.platform.Platform
 import okhttp3.internal.publicsuffix.PublicSuffixDatabase
@@ -103,7 +103,7 @@ class DnsOverHttps internal constructor(builder: Builder) : Dns {
 
     executeRequests(hostname, networkRequests, results, failures)
 
-    return if (!results.isEmpty()) {
+    return if (results.isNotEmpty()) {
       results
     } else {
       throwBestFailure(hostname, failures)
@@ -196,7 +196,7 @@ class DnsOverHttps internal constructor(builder: Builder) : Dns {
   }
 
   private fun getCacheOnlyResponse(request: Request): Response? {
-    if (!post && client.cache() != null) {
+    if (!post && client.cache != null) {
       try {
         val cacheRequest = request.newBuilder().cacheControl(CacheControl.FORCE_CACHE).build()
 
@@ -244,7 +244,7 @@ class DnsOverHttps internal constructor(builder: Builder) : Dns {
         val query = DnsRecordCodec.encodeQuery(hostname, type)
 
         if (post) {
-          url(url).post(RequestBody.create(DNS_MESSAGE, query))
+          url(url).post(query.toRequestBody(DNS_MESSAGE))
         } else {
           val encoded = query.base64Url().replace("=", "")
           val requestUrl = url.newBuilder().addQueryParameter("dns", encoded).build()
