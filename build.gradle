@@ -156,20 +156,24 @@ subprojects { project ->
     }
   }
 
-  dokka {
-    reportUndocumented = false 
-    skipDeprecated = true
-    jdkVersion = 8
-    packageOptions {
-      prefix = "okhttp3.internal"
-      suppress = true
-    }
-    if (project.file('Module.md').exists()) {
-      includes = ['Module.md']
-    }
-    externalDocumentationLink {
-      url = new URL("https://square.github.io/okio/2.x/okio/jvm/index.html")
-      packageListUrl = new URL("https://square.github.io/okio/2.x/okio/jvm/package-list")
+  // We have to set the dokka configuration after evaluation since the com.vanniktech.maven.publish
+  // plugin overwrites our dokka configuration on projects where it's applied.
+  afterEvaluate { p ->
+      p.tasks.dokka {
+        reportUndocumented = false
+        skipDeprecated = true
+      jdkVersion = 8
+      packageOptions {
+        prefix = "okhttp3.internal"
+        suppress = true
+      }
+      if (project.file('Module.md').exists()) {
+        includes = ['Module.md']
+      }
+      externalDocumentationLink {
+        url = new URL("https://square.github.io/okio/2.x/okio/jvm/index.html")
+        packageListUrl = new URL("https://square.github.io/okio/2.x/okio/jvm/package-list")
+      }
     }
   }
 }
@@ -216,7 +220,7 @@ def alpnBootVersionForPatchVersion(String javaVersion, int patchVersion) {
       return '8.1.11.v20170118'
     case 161..181:
       return '8.1.12.v20180117'
-    case 191..202:
+    case 191..212:
       return '8.1.13.v20181017'
     default:
       throw new IllegalStateException("Unexpected Java version: ${javaVersion}")
