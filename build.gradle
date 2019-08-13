@@ -146,7 +146,7 @@ subprojects { project ->
     def alpnBootVersion = alpnBootVersion()
     if (alpnBootVersion != null) {
       dependencies {
-        testImplementation "org.mortbay.jetty.alpn:alpn-boot:$alpnBootVersion"
+        testCompile "org.mortbay.jetty.alpn:alpn-boot:$alpnBootVersion"
       }
       def alpnBootJar = configurations.testCompile.find { it.name.startsWith("alpn-boot-") }
       test {
@@ -189,8 +189,8 @@ subprojects { project ->
         includes = ['Module.md']
       }
       externalDocumentationLink {
-        url = new URL("https://square.github.io/okio/2.x/okio/jvm/index.html")
-        packageListUrl = new URL("https://square.github.io/okio/2.x/okio/jvm/package-list")
+        url = new URL("https://square.github.io/okio/2.x/okio/")
+        packageListUrl = new URL("https://square.github.io/okio/2.x/okio/package-list")
       }
     }
   }
@@ -238,7 +238,7 @@ def alpnBootVersionForPatchVersion(String javaVersion, int patchVersion) {
       return '8.1.11.v20170118'
     case 161..181:
       return '8.1.12.v20180117'
-    case 191..212:
+    case 191..222:
       return '8.1.13.v20181017'
     default:
       throw new IllegalStateException("Unexpected Java version: ${javaVersion}")
