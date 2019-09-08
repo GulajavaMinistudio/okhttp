@@ -122,22 +122,22 @@ class Http2Connection internal constructor(builder: Builder) : Closeable {
     set(Settings.MAX_FRAME_SIZE, Http2.INITIAL_MAX_FRAME_SIZE)
   }
 
-  /**
-   * The total number of bytes consumed by the application, but not yet acknowledged by sending a
-   * `WINDOW_UPDATE` frame on this connection.
-   */
-  // Visible for testing
-  var unacknowledgedBytesRead = 0L
+  /** The total number of bytes consumed by the application. */
+  var readBytesTotal = 0L
     private set
 
-  /**
-   * Count of bytes that can be written on the connection before receiving a window update.
-   */
-  // Visible for testing
-  var bytesLeftInWriteWindow: Long = peerSettings.initialWindowSize.toLong()
-    internal set
+  /** The total number of bytes acknowledged by outgoing `WINDOW_UPDATE` frames. */
+  var readBytesAcknowledged = 0L
+    private set
 
-  internal var receivedInitialPeerSettings = false
+  /** The total number of bytes produced by the application. */
+  var writeBytesTotal = 0L
+    private set
+
+  /** The total number of bytes permitted to be produced according to `WINDOW_UPDATE` frames. */
+  var writeBytesMaximum: Long = peerSettings.initialWindowSize.toLong()
+    private set
+
   internal val socket: Socket = builder.socket
   val writer = Http2Writer(builder.sink, client)
 
@@ -177,10 +177,11 @@ class Http2Connection internal constructor(builder: Builder) : Closeable {
       peerSettings.getMaxConcurrentStreams(Integer.MAX_VALUE)
 
   @Synchronized internal fun updateConnectionFlowControl(read: Long) {
-    unacknowledgedBytesRead += read
-    if (unacknowledgedBytesRead >= okHttpSettings.initialWindowSize / 2) {
-      writeWindowUpdateLater(0, unacknowledgedBytesRead)
-      unacknowledgedBytesRead = 0
+    readBytesTotal += read
+    val readBytesToAcknowledge = (readBytesTotal - readBytesAcknowledged)
+    if (readBytesToAcknowledge >= okHttpSettings.initialWindowSize / 2) {
+      writeWindowUpdateLater(0, readBytesToAcknowledge)
+      readBytesAcknowledged += readBytesToAcknowledge
     }
   }
 
@@ -238,7 +239,9 @@ class Http2Connection internal constructor(builder: Builder) : Closeable {
         streamId = nextStreamId
         nextStreamId += 2
         stream = Http2Stream(streamId, this, outFinished, inFinished, null)
-        flushHeaders = (!out || bytesLeftInWriteWindow == 0L || stream.bytesLeftInWriteWindow == 0L)
+        flushHeaders = !out ||
+            writeBytesTotal >= writeBytesMaximum ||
+            stream.writeBytesTotal >= stream.writeBytesMaximum
         if (stream.isOpen) {
           streams[streamId] = stream
         }
@@ -298,7 +301,7 @@ class Http2Connection internal constructor(builder: Builder) : Closeable {
       var toWrite: Int
       synchronized(this@Http2Connection) {
         try {
-          while (bytesLeftInWriteWindow <= 0L) {
+          while (writeBytesTotal >= writeBytesMaximum) {
             // Before blocking, confirm that the stream we're writing is still open. It's possible
             // that the stream has since been closed (such as if this write timed out.)
             if (!streams.containsKey(streamId)) {
@@ -311,9 +314,9 @@ class Http2Connection internal constructor(builder: Builder) : Closeable {
           throw InterruptedIOException()
         }
 
-        toWrite = minOf(byteCount, bytesLeftInWriteWindow).toInt()
+        toWrite = minOf(byteCount, writeBytesMaximum - writeBytesTotal).toInt()
         toWrite = minOf(toWrite, writer.maxDataLength())
-        bytesLeftInWriteWindow -= toWrite.toLong()
+        writeBytesTotal += toWrite.toLong()
       }
 
       byteCount -= toWrite.toLong()
@@ -656,43 +659,53 @@ class Http2Connection internal constructor(builder: Builder) : Closeable {
     }
 
     override fun settings(clearPrevious: Boolean, settings: Settings) {
+      writerExecutor.tryExecute("OkHttp $connectionName ACK Settings") {
+        applyAndAckSettings(clearPrevious, settings)
+      }
+    }
+
+    /**
+     * Apply inbound settings and send an acknowledgement to the peer that provided them.
+     *
+     * We need to apply the settings and ack them atomically. This is because some HTTP/2
+     * implementations (nghttp2) forbid peers from taking advantage of settings before they have
+     * acknowledged! In particular, we shouldn't send frames that assume a new `initialWindowSize`
+     * until we send the frame that acknowledges this new size.
+     *
+     * Since we can't ACK settings on the current reader thread (the reader thread can't write) we
+     * execute all peer settings logic on the writer thread. This relies on the fact that the
+     * writer executor won't reorder tasks; otherwise settings could be applied in the opposite
+     * order than received.
+     */
+    fun applyAndAckSettings(clearPrevious: Boolean, settings: Settings) {
       var delta = 0L
       var streamsToNotify: Array<Http2Stream>? = null
-      synchronized(this@Http2Connection) {
-        val priorWriteWindowSize = peerSettings.initialWindowSize
-        if (clearPrevious) peerSettings.clear()
-        peerSettings.merge(settings)
-        applyAndAckSettings(settings)
-        val peerInitialWindowSize = peerSettings.initialWindowSize
-        if (peerInitialWindowSize != -1 && peerInitialWindowSize != priorWriteWindowSize) {
-          delta = (peerInitialWindowSize - priorWriteWindowSize).toLong()
-          if (!receivedInitialPeerSettings) {
-            receivedInitialPeerSettings = true
-          }
-          if (streams.isNotEmpty()) {
-            streamsToNotify = streams.values.toTypedArray()
+      synchronized(writer) {
+        synchronized(this@Http2Connection) {
+          val priorWriteWindowSize = peerSettings.initialWindowSize
+          if (clearPrevious) peerSettings.clear()
+          peerSettings.merge(settings)
+          val peerInitialWindowSize = peerSettings.initialWindowSize
+          if (peerInitialWindowSize != -1 && peerInitialWindowSize != priorWriteWindowSize) {
+            delta = (peerInitialWindowSize - priorWriteWindowSize).toLong()
+            streamsToNotify = if (streams.isNotEmpty()) streams.values.toTypedArray() else null
           }
         }
-        listenerExecutor.execute("OkHttp $connectionName settings") {
-          listener.onSettings(this@Http2Connection)
+        try {
+          writer.applyAndAckSettings(peerSettings)
+        } catch (e: IOException) {
+          failConnection(e)
         }
       }
-      if (streamsToNotify != null && delta != 0L) {
+      if (streamsToNotify != null) {
         for (stream in streamsToNotify!!) {
           synchronized(stream) {
             stream.addBytesToWriteWindow(delta)
           }
         }
       }
-    }
-
-    private fun applyAndAckSettings(peerSettings: Settings) {
-      writerExecutor.tryExecute("OkHttp $connectionName ACK Settings") {
-        try {
-          writer.applyAndAckSettings(peerSettings)
-        } catch (e: IOException) {
-          failConnection(e)
-        }
+      listenerExecutor.execute("OkHttp $connectionName settings") {
+        listener.onSettings(this@Http2Connection)
       }
     }
 
@@ -746,7 +759,7 @@ class Http2Connection internal constructor(builder: Builder) : Closeable {
     override fun windowUpdate(streamId: Int, windowSizeIncrement: Long) {
       if (streamId == 0) {
         synchronized(this@Http2Connection) {
-          bytesLeftInWriteWindow += windowSizeIncrement
+          writeBytesMaximum += windowSizeIncrement
           this@Http2Connection.notifyAll()
         }
       } else {
