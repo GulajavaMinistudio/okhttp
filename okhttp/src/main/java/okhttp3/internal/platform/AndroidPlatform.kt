@@ -83,7 +83,7 @@ class AndroidPlatform : Platform() {
       // No TLS extensions if the socket class is custom.
       socketAdapters.find { it.matchesSocket(sslSocket) }?.getSelectedProtocol(sslSocket)
 
-  override fun log(level: Int, message: String, t: Throwable?) {
+  override fun log(message: String, level: Int, t: Throwable?) {
     androidLog(level, message, t)
   }
 
@@ -93,7 +93,7 @@ class AndroidPlatform : Platform() {
     val reported = closeGuard.warnIfOpen(stackTrace)
     if (!reported) {
       // Unable to report via CloseGuard. As a last-ditch effort, send it to the logger.
-      log(WARN, message, null)
+      log(message, WARN)
     }
   }
 
@@ -194,22 +194,28 @@ class AndroidPlatform : Platform() {
     val isAndroid: Boolean = try {
       // Trigger an early exception over a fatal error, prefer a RuntimeException over Error.
       Class.forName("com.android.org.conscrypt.OpenSSLSocketImpl")
+
+      // account for android-all, forces UnsatisfiedLinkError in Intellij
+      check(Build.VERSION.SDK_INT > 0)
+
       true
     } catch (_: ClassNotFoundException) {
+      // Running in a JVM
+      false
+    } catch (_: UnsatisfiedLinkError) {
+      // Running in a JVM/Intellij with android-all on the classpath
       false
     }
 
-    val isSupported: Boolean = try {
-      // Trigger an early exception over a fatal error, prefer a RuntimeException over Error.
-      Class.forName("com.android.org.conscrypt.OpenSSLSocketImpl")
+    val isSupported: Boolean = when {
+      !isAndroid -> false
+      else -> {
+        // Fail Fast
+        check(
+            Build.VERSION.SDK_INT >= 21) { "Expected Android API level 21+ but was ${Build.VERSION.SDK_INT}" }
 
-      // Fail Fast
-      check(
-          Build.VERSION.SDK_INT >= 21) { "Expected Android API level 21+ but was ${Build.VERSION.SDK_INT}" }
-
-      true
-    } catch (_: ClassNotFoundException) {
-      false
+        true
+      }
     }
 
     fun buildIfSupported(): Platform? = if (isSupported) AndroidPlatform() else null
