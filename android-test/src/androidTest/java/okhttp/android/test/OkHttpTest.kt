@@ -18,6 +18,7 @@ package okhttp.android.test
 import android.os.Build
 import android.support.test.InstrumentationRegistry
 import android.support.test.runner.AndroidJUnit4
+import com.google.android.gms.common.GooglePlayServicesNotAvailableException
 import com.squareup.moshi.Moshi
 import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
 import com.google.android.gms.security.ProviderInstaller
@@ -42,13 +43,11 @@ import okhttp3.testing.PlatformRule
 import okhttp3.tls.internal.TlsUtil.localhost
 import okio.ByteString.Companion.toByteString
 import org.conscrypt.Conscrypt
-import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Assume.assumeNoException
 import org.junit.Assume.assumeTrue
-import org.junit.Before
 import org.junit.BeforeClass
 import org.junit.Ignore
 import org.junit.Rule
@@ -136,10 +135,16 @@ class OkHttpTest {
         assertEquals(Protocol.HTTP_2, response.protocol)
         assertEquals(200, response.code)
         // see https://github.com/google/conscrypt/blob/b9463b2f74df42d85c73715a5f19e005dfb7b802/android/src/main/java/org/conscrypt/Platform.java#L613
-        if (Build.VERSION.SDK_INT >= 24) {
-          assertEquals("org.conscrypt.Java8FileDescriptorSocket", socketClass)
-        } else {
-          assertEquals("org.conscrypt.ConscryptFileDescriptorSocket", socketClass)
+        when {
+            Build.VERSION.SDK_INT >= 24 -> {
+              assertEquals("org.conscrypt.Java8FileDescriptorSocket", socketClass)
+            }
+            Build.VERSION.SDK_INT < 22 -> {
+              assertEquals("org.conscrypt.KitKatPlatformOpenSSLSocketImplAdapter", socketClass)
+            }
+            else -> {
+              assertEquals("org.conscrypt.ConscryptFileDescriptorSocket", socketClass)
+            }
         }
         assertEquals(TlsVersion.TLS_1_3, response.handshake?.tlsVersion)
       }
@@ -153,7 +158,11 @@ class OkHttpTest {
     assumeNetwork()
 
     try {
-      ProviderInstaller.installIfNeeded(InstrumentationRegistry.getTargetContext())
+      try {
+        ProviderInstaller.installIfNeeded(InstrumentationRegistry.getTargetContext())
+      } catch (gpsnae: GooglePlayServicesNotAvailableException) {
+        throw AssumptionViolatedException("Google Play Services not available")
+      }
 
       val request = Request.Builder().url("https://facebook.com/robots.txt").build()
 
@@ -285,8 +294,10 @@ class OkHttpTest {
 
     response.use {
       assertEquals(200, response.code)
+      assertEquals(Protocol.HTTP_2, response.protocol)
+      assertEquals(TlsVersion.TLS_1_2, response.handshake?.tlsVersion)
       assertEquals("CN=localhost",
-          (response.handshake!!.peerCertificates.single() as X509Certificate).subjectDN.name)
+          (response.handshake!!.peerCertificates.first() as X509Certificate).subjectDN.name)
     }
   }
 
