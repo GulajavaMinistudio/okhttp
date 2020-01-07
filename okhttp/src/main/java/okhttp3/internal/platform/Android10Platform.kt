@@ -41,10 +41,10 @@ class Android10Platform : Platform() {
       socketAdapters.find { it.matchesSocketFactory(sslSocketFactory) }
           ?.trustManager(sslSocketFactory)
 
-  override fun configureTlsExtensions(sslSocket: SSLSocket, protocols: List<Protocol>) {
+  override fun configureTlsExtensions(sslSocket: SSLSocket, hostname: String?, protocols: List<Protocol>) {
     // No TLS extensions if the socket class is custom.
     socketAdapters.find { it.matchesSocket(sslSocket) }
-        ?.configureTlsExtensions(sslSocket, protocols)
+        ?.configureTlsExtensions(sslSocket, hostname, protocols)
   }
 
   override fun getSelectedProtocol(sslSocket: SSLSocket) =
@@ -59,7 +59,7 @@ class Android10Platform : Platform() {
       NetworkSecurityPolicy.getInstance().isCleartextTrafficPermitted(hostname)
 
   override fun buildCertificateChainCleaner(trustManager: X509TrustManager): CertificateChainCleaner =
-      Android10CertificateChainCleaner(trustManager)
+      Android10CertificateChainCleaner.buildIfSupported(trustManager) ?: super.buildCertificateChainCleaner(trustManager)
 
   companion object {
     val isSupported: Boolean = isAndroid && Build.VERSION.SDK_INT >= 29
