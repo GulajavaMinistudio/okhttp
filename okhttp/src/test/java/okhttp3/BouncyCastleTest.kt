@@ -17,7 +17,6 @@ package okhttp3
 
 import java.net.InetAddress
 import okhttp3.TestUtil.assumeNetwork
-import okhttp3.internal.platform.OpenJSSEPlatform
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
 import okhttp3.testing.PlatformRule
@@ -32,7 +31,7 @@ import org.junit.Test
 import org.openjsse.sun.security.ssl.SSLSocketFactoryImpl
 import org.openjsse.sun.security.ssl.SSLSocketImpl
 
-class OpenJSSETest {
+class BouncyCastleTest {
   @JvmField @Rule var platform = PlatformRule()
   @JvmField @Rule val clientTestRule = OkHttpClientTestRule()
   @JvmField @Rule val server = MockWebServer()
@@ -40,11 +39,13 @@ class OpenJSSETest {
 
   @Before
   fun setUp() {
-    platform.assumeOpenJSSE()
+    platform.assumeBouncyCastle()
   }
 
   @Test
   fun testTlsv13Works() {
+    platform.expectFailureOnJdkVersion(8)
+
     enableTls()
 
     server.enqueue(MockResponse().setBody("abc"))
@@ -78,15 +79,9 @@ class OpenJSSETest {
     val request = Request.Builder().url("https://mozilla.org/robots.txt").build()
 
     client.newCall(request).execute().use {
-      assertThat(it.protocol).isEqualTo(Protocol.HTTP_2)
+      assertThat(it.protocol).isEqualTo(Protocol.HTTP_1_1)
       assertThat(it.handshake!!.tlsVersion).isEqualTo(TlsVersion.TLS_1_3)
     }
-  }
-
-  @Test
-  fun testBuildIfSupported() {
-    val actual = OpenJSSEPlatform.buildIfSupported()
-    assertThat(actual).isNotNull
   }
 
   private fun enableTls() {

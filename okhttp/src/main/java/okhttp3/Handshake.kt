@@ -15,14 +15,14 @@
  */
 package okhttp3
 
-import okhttp3.internal.immutableListOf
-import okhttp3.internal.toImmutableList
 import java.io.IOException
 import java.security.Principal
 import java.security.cert.Certificate
 import java.security.cert.X509Certificate
 import javax.net.ssl.SSLPeerUnverifiedException
 import javax.net.ssl.SSLSession
+import okhttp3.internal.immutableListOf
+import okhttp3.internal.toImmutableList
 
 /**
  * A record of a TLS handshake. For HTTPS clients, the client is *local* and the remote server is
@@ -121,10 +121,15 @@ class Handshake internal constructor(
   }
 
   override fun toString(): String {
+    val peerCertificatesString = try {
+      peerCertificates.map { it.name }.toString()
+    } catch (_: SSLPeerUnverifiedException) {
+      "Failed: SSLPeerUnverifiedException"
+    }
     return "Handshake{" +
         "tlsVersion=$tlsVersion " +
         "cipherSuite=$cipherSuite " +
-        "peerCertificates=${peerCertificates.map { it.name }} " +
+        "peerCertificates=$peerCertificatesString " +
         "localCertificates=${localCertificates.map { it.name }}}"
   }
 
