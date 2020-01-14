@@ -104,9 +104,17 @@ subprojects { project ->
   targetCompatibility = JavaVersion.VERSION_1_8
 
   checkstyleMain.exclude '**/CipherSuite.java'
+  configurations {
+    checkstyleConfig
+  }
+  dependencies {
+    checkstyleConfig dependencies.create("com.puppycrawl.tools:checkstyle:${versions.checkstyle}") {
+      transitive = false
+    }
+  }
   afterEvaluate {
     checkstyle {
-      configFile = rootProject.file('checkstyle.xml')
+      config = resources.text.fromArchiveEntry(configurations.checkstyleConfig, 'google_checks.xml')
       toolVersion "${versions.checkstyle}"
       sourceSets = [project.sourceSets.main]
     }
@@ -262,7 +270,7 @@ def alpnBootVersionForPatchVersion(String javaVersion, int patchVersion) {
       return '8.1.11.v20170118'
     case 161..181:
       return '8.1.12.v20180117'
-    case 191..222:
+    case 191..232:
       return '8.1.13.v20181017'
     default:
       throw new IllegalStateException("Unexpected Java version: ${javaVersion}")
