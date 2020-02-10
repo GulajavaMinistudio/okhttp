@@ -26,7 +26,6 @@ import java.net.HttpURLConnection;
 import java.net.InetAddress;
 import java.net.ProtocolException;
 import java.net.Proxy;
-import java.net.SocketException;
 import java.net.SocketTimeoutException;
 import java.net.UnknownHostException;
 import java.net.UnknownServiceException;
@@ -994,10 +993,7 @@ public final class CallTest {
   @Test
   public void interceptorCallsProceedWithoutClosingPriorResponse() throws Exception {
     server.enqueue(new MockResponse()
-        .setBodyDelay(250, TimeUnit.MILLISECONDS)
         .setBody("abc"));
-    server.enqueue(new MockResponse()
-        .setBody("def"));
 
     client = clientTestRule.newClientBuilder()
         .addInterceptor(new Interceptor() {
@@ -1017,8 +1013,7 @@ public final class CallTest {
     Request request = new Request.Builder()
         .url(server.url("/"))
         .build();
-    executeSynchronously(request)
-        .assertFailure(SocketException.class);
+    executeSynchronously(request).assertBody("abc");
   }
 
   /**
@@ -3034,6 +3029,35 @@ public final class CallTest {
     assertThat(get.getHeader("User-Agent")).isEqualTo("App 1.0");
 
     assertThat(hostnameVerifier.calls).containsExactly("verify android.com");
+  }
+
+  /**
+   * We had a bug where OkHttp would crash if HTTP proxies returned a truncated response.
+   * https://github.com/square/okhttp/issues/5727
+   */
+  @Test public void proxyUpgradeFailsWithTruncatedResponse() throws Exception {
+    server.enqueue(new MockResponse()
+        .setBody("abc")
+        .setHeader("Content-Length", "5")
+        .setSocketPolicy(SocketPolicy.DISCONNECT_AT_END));
+
+    RecordingHostnameVerifier hostnameVerifier = new RecordingHostnameVerifier();
+    client = client.newBuilder()
+        .sslSocketFactory(
+            handshakeCertificates.sslSocketFactory(), handshakeCertificates.trustManager())
+        .proxy(server.toProxyAddress())
+        .hostnameVerifier(hostnameVerifier)
+        .build();
+
+    Request request = new Request.Builder()
+        .url("https://android.com/foo")
+        .build();
+    try {
+      client.newCall(request).execute();
+      fail();
+    } catch (IOException expected) {
+      assertThat(expected).hasMessage("unexpected end of stream");
+    }
   }
 
   /** Respond to a proxy authorization challenge. */

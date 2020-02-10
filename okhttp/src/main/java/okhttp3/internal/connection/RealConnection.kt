@@ -100,6 +100,12 @@ class RealConnection(
   var noNewExchanges = false
 
   /**
+   * If true, this connection may not be used for coalesced requests. These are requests that could
+   * share the same connection without sharing the same hostname.
+   */
+  private var noCoalescedConnections = false
+
+  /**
    * The number of times there was a problem establishing a stream that could be due to route
    * chosen. Guarded by [connectionPool].
    */
@@ -133,6 +139,15 @@ class RealConnection(
 
     synchronized(connectionPool) {
       noNewExchanges = true
+    }
+  }
+
+  /** Prevent this connection from being used for hosts other than the one in [route]. */
+  fun noCoalescedConnections() {
+    connectionPool.assertThreadDoesntHoldLock()
+
+    synchronized(connectionPool) {
+      noCoalescedConnections = true
     }
   }
 
@@ -420,7 +435,7 @@ class RealConnection(
     while (true) {
       val source = this.source!!
       val sink = this.sink!!
-      val tunnelCodec = Http1ExchangeCodec(null, null, source, sink)
+      val tunnelCodec = Http1ExchangeCodec(null, this, source, sink)
       source.timeout().timeout(readTimeout.toLong(), MILLISECONDS)
       sink.timeout().timeout(writeTimeout.toLong(), MILLISECONDS)
       tunnelCodec.writeRequest(nextRequest.headers, requestLine)
@@ -559,8 +574,9 @@ class RealConnection(
     }
 
     // We have a host mismatch. But if the certificate matches, we're still good.
-    return handshake != null && OkHostnameVerifier.verify(
-        url.host, handshake!!.peerCertificates[0] as X509Certificate)
+    return !noCoalescedConnections &&
+        handshake != null &&
+        OkHostnameVerifier.verify(url.host, handshake!!.peerCertificates[0] as X509Certificate)
   }
 
   @Throws(SocketException::class)
