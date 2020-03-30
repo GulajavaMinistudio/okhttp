@@ -15,8 +15,11 @@
  */
 package okhttp3.internal.platform.android
 
+import android.annotation.SuppressLint
 import android.net.SSLCertificateSocketFactory
 import android.os.Build
+import java.io.IOException
+import java.lang.IllegalArgumentException
 import javax.net.ssl.SSLSocket
 import javax.net.ssl.SSLSocketFactory
 import javax.net.ssl.X509TrustManager
@@ -40,25 +43,32 @@ class Android10SocketAdapter : SocketAdapter {
 
   override fun isSupported(): Boolean = Companion.isSupported()
 
+  @SuppressLint("NewApi")
   override fun getSelectedProtocol(sslSocket: SSLSocket): String? =
       when (val protocol = sslSocket.applicationProtocol) {
         null, "" -> null
         else -> protocol
       }
 
+  @SuppressLint("NewApi")
   override fun configureTlsExtensions(
     sslSocket: SSLSocket,
     hostname: String?,
     protocols: List<Protocol>
   ) {
-    socketFactory.setUseSessionTickets(sslSocket, true)
+    try {
+      socketFactory.setUseSessionTickets(sslSocket, true)
 
-    val sslParameters = sslSocket.sslParameters
+      val sslParameters = sslSocket.sslParameters
 
-    // Enable ALPN.
-    sslParameters.applicationProtocols = Platform.alpnProtocolNames(protocols).toTypedArray()
+      // Enable ALPN.
+      sslParameters.applicationProtocols = Platform.alpnProtocolNames(protocols).toTypedArray()
 
-    sslSocket.sslParameters = sslParameters
+      sslSocket.sslParameters = sslParameters
+    } catch (iae: IllegalArgumentException) {
+      // probably java.lang.IllegalArgumentException: Invalid input to toASCII from IDN.toASCII
+      throw IOException("Android internal error", iae)
+    }
   }
 
   companion object {

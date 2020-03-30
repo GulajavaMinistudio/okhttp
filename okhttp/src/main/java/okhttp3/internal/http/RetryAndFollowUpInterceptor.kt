@@ -45,6 +45,7 @@ import okhttp3.internal.http.StatusLine.Companion.HTTP_MISDIRECTED_REQUEST
 import okhttp3.internal.http.StatusLine.Companion.HTTP_PERM_REDIRECT
 import okhttp3.internal.http.StatusLine.Companion.HTTP_TEMP_REDIRECT
 import okhttp3.internal.http2.ConnectionShutdownException
+import okhttp3.internal.withSuppressed
 
 /**
  * This interceptor recovers from failures and follows redirects as necessary. It may throw an
@@ -59,8 +60,10 @@ class RetryAndFollowUpInterceptor(private val client: OkHttpClient) : Intercepto
     val call = realChain.call
     var followUpCount = 0
     var priorResponse: Response? = null
+    var newExchangeFinder = true
+    var recoveredFailures = listOf<IOException>()
     while (true) {
-      call.enterNetworkInterceptorExchange(request)
+      call.enterNetworkInterceptorExchange(request, newExchangeFinder)
 
       var response: Response
       var closeActiveExchange = true
@@ -71,17 +74,24 @@ class RetryAndFollowUpInterceptor(private val client: OkHttpClient) : Intercepto
 
         try {
           response = realChain.proceed(request)
+          newExchangeFinder = true
         } catch (e: RouteException) {
           // The attempt to connect via a route failed. The request will not have been sent.
           if (!recover(e.lastConnectException, call, request, requestSendStarted = false)) {
-            throw e.firstConnectException
+            throw e.firstConnectException.withSuppressed(recoveredFailures)
+          } else {
+            recoveredFailures += e.firstConnectException
           }
+          newExchangeFinder = false
           continue
         } catch (e: IOException) {
           // An attempt to communicate with a server failed. The request may have been sent.
           if (!recover(e, call, request, requestSendStarted = e !is ConnectionShutdownException)) {
-            throw e
+            throw e.withSuppressed(recoveredFailures)
+          } else {
+            recoveredFailures += e
           }
+          newExchangeFinder = false
           continue
         }
 
@@ -147,7 +157,8 @@ class RetryAndFollowUpInterceptor(private val client: OkHttpClient) : Intercepto
     if (!isRecoverable(e, requestSendStarted)) return false
 
     // No more routes to attempt.
-    if (!call.canRetry()) return false
+    if (!call.retryAfterFailure()) return false
+
     // For failure recovery, use the same route selector with a new connection.
     return true
   }

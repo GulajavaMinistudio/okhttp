@@ -55,7 +55,8 @@ interface WebSocket {
 
   /**
    * Returns the size in bytes of all messages enqueued to be transmitted to the server. This
-   * doesn't include framing overhead. It also doesn't include any bytes buffered by the operating
+   * doesn't include framing overhead. If compression is enabled, uncompressed messages size
+   * is used to calculate this value. It also doesn't include any bytes buffered by the operating
    * system or network intermediaries. This method returns 0 if no messages are waiting in the
    * queue. If may return a nonzero value after the web socket has been canceled; this indicates
    * that enqueued messages were not transmitted.
@@ -97,8 +98,8 @@ interface WebSocket {
    *
    * @param code Status code as defined by
    *     [Section 7.4 of RFC 6455](http://tools.ietf.org/html/rfc6455#section-7.4).
-   * @param reason Reason for shutting down or null.
-   * @throws IllegalArgumentException if code is invalid.
+   * @param reason Reason for shutting down, no longer than 123 bytes of UTF-8 encoded data (**not** characters) or null.
+   * @throws IllegalArgumentException if [code] is invalid or [reason] is too long.
    */
   fun close(code: Int, reason: String?): Boolean
 

@@ -30,6 +30,7 @@ import java.net.SocketTimeoutException;
 import java.net.UnknownHostException;
 import java.net.UnknownServiceException;
 import java.security.cert.Certificate;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -60,6 +61,7 @@ import okhttp3.CallEvent.ConnectionReleased;
 import okhttp3.CallEvent.ResponseFailed;
 import okhttp3.internal.DoubleInetAddressDns;
 import okhttp3.internal.RecordingOkAuthenticator;
+import okhttp3.internal.Util;
 import okhttp3.internal.Version;
 import okhttp3.internal.http.RecordingProxySelector;
 import okhttp3.internal.io.InMemoryFileSystem;
@@ -889,15 +891,15 @@ public final class CallTest {
     server.enqueue(new MockResponse().setBody("abc"));
     server.enqueue(new MockResponse().setBody("def").throttleBody(1, 750, TimeUnit.MILLISECONDS));
 
-    // First request: time out after 1000ms.
+    // First request: time out after 1s.
     client = client.newBuilder()
-        .readTimeout(1000, TimeUnit.MILLISECONDS)
+        .readTimeout(Duration.ofSeconds(1))
         .build();
     executeSynchronously("/a").assertBody("abc");
 
     // Second request: time out after 250ms.
     client = client.newBuilder()
-        .readTimeout(250, TimeUnit.MILLISECONDS)
+        .readTimeout(Duration.ofMillis(250))
         .build();
     Request request = new Request.Builder().url(server.url("/b")).build();
     Response response = client.newCall(request).execute();
@@ -928,7 +930,7 @@ public final class CallTest {
         .setBody("unreachable!"));
 
     client = client.newBuilder()
-        .readTimeout(100, TimeUnit.MILLISECONDS)
+        .readTimeout(Duration.ofMillis(100))
         .build();
 
     Request request = new Request.Builder().url(server.url("/")).build();
@@ -953,8 +955,8 @@ public final class CallTest {
         .setBody("success!"));
     client = client.newBuilder()
         .proxySelector(proxySelector)
-        .readTimeout(100, TimeUnit.MILLISECONDS)
-        .connectTimeout(100, TimeUnit.MILLISECONDS)
+        .readTimeout(Duration.ofMillis(100))
+        .connectTimeout(Duration.ofMillis(100))
         .build();
 
     Request request = new Request.Builder().url("http://android.com/").build();
@@ -1032,7 +1034,7 @@ public final class CallTest {
 
     client = client.newBuilder()
         .proxySelector(proxySelector)
-        .readTimeout(100, TimeUnit.MILLISECONDS)
+        .readTimeout(Duration.ofMillis(100))
         .build();
 
     Request request = new Request.Builder().url("http://android.com/").build();
@@ -2766,7 +2768,7 @@ public final class CallTest {
         .setSocketPolicy(SocketPolicy.NO_RESPONSE));
 
     client = client.newBuilder()
-        .readTimeout(500, TimeUnit.MILLISECONDS)
+        .readTimeout(Duration.ofMillis(500))
         .build();
 
     Request request = new Request.Builder()
@@ -2815,7 +2817,7 @@ public final class CallTest {
 
   @Test public void serverRespondsWith100ContinueOnly() throws Exception {
     client = client.newBuilder()
-        .readTimeout(1, TimeUnit.SECONDS)
+        .readTimeout(Duration.ofSeconds(1))
         .build();
 
     server.enqueue(new MockResponse()
@@ -3789,6 +3791,22 @@ public final class CallTest {
       assertThat(source.exhausted()).isTrue();
       assertThat(response.trailers()).isEqualTo(Headers.of("trailers", "boom"));
     }
+  }
+
+  @Test public void connectionIsImmediatelyUnhealthy() throws Exception {
+    EventListener listener = new EventListener() {
+      @Override public void connectionAcquired(Call call, Connection connection) {
+        Util.closeQuietly(connection.socket());
+      }
+    };
+
+    client = client.newBuilder()
+        .eventListener(listener)
+        .build();
+
+    executeSynchronously("/")
+        .assertFailure(IOException.class)
+        .assertFailure("exhausted all routes");
   }
 
   @Test public void requestBodyThrowsUnrelatedToNetwork() throws Exception {

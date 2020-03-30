@@ -121,11 +121,13 @@ class RealCall(
     val exchangeToCancel: Exchange?
     val connectionToCancel: RealConnection?
     synchronized(connectionPool) {
+      if (canceled) return // Already canceled.
       canceled = true
       exchangeToCancel = exchange
       connectionToCancel = exchangeFinder?.connectingConnection() ?: connection
     }
     exchangeToCancel?.cancel() ?: connectionToCancel?.cancel()
+    eventListener.canceled(this)
   }
 
   override fun isCanceled(): Boolean {
@@ -213,29 +215,24 @@ class RealCall(
    * find an exchange to carry the request.
    *
    * Note that an exchange will not be needed if the request is satisfied by the cache.
+   *
+   * @param newExchangeFinder true if this is not a retry and new routing can be performed.
    */
-  fun enterNetworkInterceptorExchange(request: Request) {
+  fun enterNetworkInterceptorExchange(request: Request, newExchangeFinder: Boolean) {
     check(interceptorScopedExchange == null)
     check(exchange == null) {
       "cannot make a new request because the previous response is still open: " +
           "please call response.close()"
     }
 
-    val exchangeFinder = this.exchangeFinder
-    if (exchangeFinder != null) {
-      if (exchangeFinder.canReuseFinderFor(request.url) && exchangeFinder.hasRouteToTry()) {
-        return // Already ready.
-      }
-
-      maybeReleaseConnection(null, true)
+    if (newExchangeFinder) {
+      this.exchangeFinder = ExchangeFinder(
+          connectionPool,
+          createAddress(request.url),
+          this,
+          eventListener
+      )
     }
-
-    this.exchangeFinder = ExchangeFinder(
-        connectionPool,
-        createAddress(request.url),
-        this,
-        eventListener
-    )
   }
 
   /** Finds a new or pooled connection to carry a forthcoming request and response. */
@@ -371,7 +368,7 @@ class RealCall(
     this.connection = null
 
     if (released.calls.isEmpty()) {
-      released.idleAtNanos = System.nanoTime()
+      released.idleAtNs = System.nanoTime()
       if (connectionPool.connectionBecameIdle(released)) {
         return released.socket()
       }
@@ -441,7 +438,7 @@ class RealCall(
     )
   }
 
-  fun canRetry() = exchangeFinder!!.hasStreamFailure() && exchangeFinder!!.hasRouteToTry()
+  fun retryAfterFailure() = exchangeFinder!!.retryAfterFailure()
 
   /**
    * Returns a string that describes this call. Doesn't include a full URL as that might contain

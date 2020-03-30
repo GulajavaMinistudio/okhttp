@@ -64,6 +64,8 @@ import javax.net.ssl.X509TrustManager
 import java.util.logging.Logger
 import okhttp3.internal.platform.AndroidPlatform
 import okhttp3.internal.platform.Android10Platform
+import java.io.IOException
+import java.lang.IllegalArgumentException
 
 /**
  * Run with "./gradlew :android-test:connectedCheck" and make sure ANDROID_SDK_ROOT is set.
@@ -165,6 +167,7 @@ class OkHttpTest {
       }
     } finally {
       Security.removeProvider("Conscrypt")
+      client.close()
     }
   }
 
@@ -200,6 +203,7 @@ class OkHttpTest {
       }
     } finally {
       Security.removeProvider("GmsCore_OpenSSL")
+      client.close()
     }
   }
 
@@ -310,7 +314,8 @@ class OkHttpTest {
     response.use {
       assertEquals(200, response.code)
       assertEquals(Protocol.HTTP_2, response.protocol)
-      assertEquals(TlsVersion.TLS_1_2, response.handshake?.tlsVersion)
+      val tlsVersion = response.handshake?.tlsVersion
+      assertTrue(tlsVersion == TlsVersion.TLS_1_2 || tlsVersion == TlsVersion.TLS_1_3)
       assertEquals("CN=localhost",
           (response.handshake!!.peerCertificates.first() as X509Certificate).subjectDN.name)
     }
@@ -386,7 +391,7 @@ class OkHttpTest {
       assertEquals(200, response.code)
     }
 
-    assertEquals(listOf("CallStart", "ProxySelectStart", "ProxySelectEnd",
+    assertEquals(listOf("CallStart",
         "ConnectionAcquired", "RequestHeadersStart", "RequestHeadersEnd", "ResponseHeadersStart",
         "ResponseHeadersEnd", "ResponseBodyStart", "ResponseBodyEnd", "ConnectionReleased",
         "CallEnd"), eventListener.recordedEventTypes())
@@ -500,6 +505,23 @@ class OkHttpTest {
     client.get("https://www.facebook.com/robots.txt")
   }
 
+  @Test
+  fun testUnderscoreRequest() {
+    assumeNetwork()
+
+    val request =
+        Request.Builder().url("https://example_underscore_123.s3.amazonaws.com/").build()
+
+    try {
+      client.newCall(request).execute().close()
+      // Hopefully this passes
+    } catch (ioe: IOException) {
+      // https://github.com/square/okhttp/issues/5840
+      assertEquals("Android internal error", ioe.message)
+      assertEquals(IllegalArgumentException::class.java, ioe.cause!!.javaClass)
+    }
+  }
+
   private fun OkHttpClient.get(url: String) {
     val request = Request.Builder().url(url).build()
     val response = this.newCall(request).execute()
@@ -529,6 +551,11 @@ class OkHttpTest {
     } catch (uhe: UnknownHostException) {
       assumeNoException(uhe)
     }
+  }
+
+  fun OkHttpClient.close() {
+    dispatcher.executorService.shutdown()
+    connectionPool.evictAll()
   }
 
   companion object {

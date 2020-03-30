@@ -28,9 +28,13 @@ import okhttp3.internal.canReuseConnectionFor
 import okhttp3.internal.closeQuietly
 import okhttp3.internal.http.ExchangeCodec
 import okhttp3.internal.http.RealInterceptorChain
+import okhttp3.internal.http2.ConnectionShutdownException
+import okhttp3.internal.http2.ErrorCode
+import okhttp3.internal.http2.StreamResetException
 
 /**
- * Attempts to find the connections for a sequence of exchanges. This uses the following strategies:
+ * Attempts to find the connections for an exchange and any retries that follow. This uses the
+ * following strategies:
  *
  *  1. If the current call already has a connection that can satisfy the request it is used. Using
  *     the same connection for an initial exchange and its follow-ups may improve locality.
@@ -57,10 +61,11 @@ class ExchangeFinder(
   private var routeSelection: RouteSelector.Selection? = null
 
   // State guarded by connectionPool.
-  private val routeSelector: RouteSelector = RouteSelector(
-      address, call.client.routeDatabase, call, eventListener)
+  private var routeSelector: RouteSelector? = null
   private var connectingConnection: RealConnection? = null
-  private var hasStreamFailure = false
+  private var refusedStreamCount = 0
+  private var connectionShutdownCount = 0
+  private var otherFailureCount = 0
   private var nextRouteToTry: Route? = null
 
   fun find(
@@ -78,10 +83,10 @@ class ExchangeFinder(
       )
       return resultConnection.newCodec(client, chain)
     } catch (e: RouteException) {
-      trackFailure()
+      trackFailure(e.lastConnectException)
       throw e
     } catch (e: IOException) {
-      trackFailure()
+      trackFailure(e)
       throw RouteException(e)
     }
   }
@@ -108,21 +113,27 @@ class ExchangeFinder(
           connectionRetryEnabled = connectionRetryEnabled
       )
 
-      // If this is a brand new connection, we can skip the extensive health checks.
+      // Confirm that the connection is good.
+      if (candidate.isHealthy(doExtensiveHealthChecks)) {
+        return candidate
+      }
+
+      // If it isn't, take it out of the pool.
+      candidate.noNewExchanges()
+
+      // Make sure we have some routes left to try. One example where we may exhaust all the routes
+      // would happen if we made a new connection and it immediately is detected as unhealthy.
       synchronized(connectionPool) {
-        if (candidate.successCount == 0) {
-          return candidate
-        }
-      }
+        if (nextRouteToTry != null) return@synchronized
 
-      // Do a (potentially slow) check to confirm that the pooled connection is still good. If it
-      // isn't, take it out of the pool and start again.
-      if (!candidate.isHealthy(doExtensiveHealthChecks)) {
-        candidate.noNewExchanges()
-        continue
-      }
+        val routesLeft = routeSelection?.hasNext() ?: true
+        if (routesLeft) return@synchronized
 
-      return candidate
+        val routesSelectionLeft = routeSelector?.hasNext() ?: true
+        if (routesSelectionLeft) return@synchronized
+
+        throw IOException("exhausted all routes")
+      }
     }
   }
 
@@ -145,11 +156,11 @@ class ExchangeFinder(
     val toClose: Socket?
     synchronized(connectionPool) {
       if (call.isCanceled()) throw IOException("Canceled")
-      hasStreamFailure = false // This is a fresh attempt.
 
-      releasedConnection = call.connection
-      toClose = if (call.connection != null &&
-          (call.connection!!.noNewExchanges || !call.connection!!.supportsUrl(address.url))) {
+      val callConnection = call.connection // changes within this overall method
+      releasedConnection = callConnection
+      toClose = if (callConnection != null && (callConnection.noNewExchanges ||
+              !sameHostAndPort(callConnection.route().address.url))) {
         call.releaseConnectionNoEvents()
       } else {
         null
@@ -162,6 +173,11 @@ class ExchangeFinder(
       }
 
       if (result == null) {
+        // The connection hasn't had any problems for this call.
+        refusedStreamCount = 0
+        connectionShutdownCount = 0
+        otherFailureCount = 0
+
         // Attempt to get a connection from the pool.
         if (connectionPool.callAcquirePooledConnection(address, call, null, false)) {
           foundPooledConnection = true
@@ -188,8 +204,13 @@ class ExchangeFinder(
     // If we need a route selection, make one. This is a blocking operation.
     var newRouteSelection = false
     if (selectedRoute == null && (routeSelection == null || !routeSelection!!.hasNext())) {
+      var localRouteSelector = routeSelector
+      if (localRouteSelector == null) {
+        localRouteSelector = RouteSelector(address, call.client.routeDatabase, call, eventListener)
+        this.routeSelector = localRouteSelector
+      }
       newRouteSelection = true
-      routeSelection = routeSelector.next()
+      routeSelection = localRouteSelector.next()
     }
 
     var routes: List<Route>? = null
@@ -266,33 +287,49 @@ class ExchangeFinder(
     return connectingConnection
   }
 
-  fun trackFailure() {
+  fun trackFailure(e: IOException) {
     connectionPool.assertThreadDoesntHoldLock()
 
     synchronized(connectionPool) {
-      hasStreamFailure = true // Permit retries.
+      nextRouteToTry = null
+      if (e is StreamResetException && e.errorCode == ErrorCode.REFUSED_STREAM) {
+        refusedStreamCount++
+      } else if (e is ConnectionShutdownException) {
+        connectionShutdownCount++
+      } else {
+        otherFailureCount++
+      }
     }
   }
 
-  /** Returns true if there is a failure that retrying might fix. */
-  fun hasStreamFailure(): Boolean {
+  /**
+   * Returns true if the current route has a failure that retrying could fix, and that there's
+   * a route to retry on.
+   */
+  fun retryAfterFailure(): Boolean {
     synchronized(connectionPool) {
-      return hasStreamFailure
-    }
-  }
+      if (refusedStreamCount == 0 && connectionShutdownCount == 0 && otherFailureCount == 0) {
+        return false // Nothing to recover from.
+      }
 
-  /** Returns true if a current route is still good or if there are routes we haven't tried yet. */
-  fun hasRouteToTry(): Boolean {
-    synchronized(connectionPool) {
       if (nextRouteToTry != null) {
         return true
       }
+
       if (retryCurrentRoute()) {
         // Lock in the route because retryCurrentRoute() is racy and we don't want to call it twice.
         nextRouteToTry = call.connection!!.route()
         return true
       }
-      return (routeSelection?.hasNext() ?: false) || routeSelector.hasNext()
+
+      // If we have a routes left, use 'em.
+      if (routeSelection?.hasNext() == true) return true
+
+      // If we haven't initialized the route selector yet, assume it'll have at least one route.
+      val localRouteSelector = routeSelector ?: return true
+
+      // If we do have a route selector, use its routes.
+      return localRouteSelector.hasNext()
     }
   }
 
@@ -302,11 +339,23 @@ class ExchangeFinder(
    * coalesced connections.
    */
   private fun retryCurrentRoute(): Boolean {
+    if (refusedStreamCount > 1 || connectionShutdownCount > 1 || otherFailureCount > 0) {
+      return false // This route has too many problems to retry.
+    }
+
     val connection = call.connection
     return connection != null &&
         connection.routeFailureCount == 0 &&
         connection.route().address.url.canReuseConnectionFor(address.url)
   }
 
-  fun canReuseFinderFor(httpUrl: HttpUrl) = httpUrl.canReuseConnectionFor(address.url)
+  /**
+   * Returns true if the host and port are unchanged from when this was created. This is used to
+   * detect if followups need to do a full connection-finding process including DNS resolution, and
+   * certificate pin checks.
+   */
+  fun sameHostAndPort(url: HttpUrl): Boolean {
+    val routeUrl = address.url
+    return url.port == routeUrl.port && url.host == routeUrl.host
+  }
 }

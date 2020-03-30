@@ -40,7 +40,7 @@ import okio.buffer
 class Exchange(
   internal val call: RealCall,
   internal val eventListener: EventListener,
-  private val finder: ExchangeFinder,
+  internal val finder: ExchangeFinder,
   private val codec: ExchangeCodec
 ) {
   /** Returns true if the request body need not complete before the response body starts. */
@@ -163,8 +163,8 @@ class Exchange(
   }
 
   private fun trackFailure(e: IOException) {
-    finder.trackFailure()
-    codec.connection.trackFailure(call.client, e)
+    finder.trackFailure(e)
+    codec.connection.trackFailure(call, e)
   }
 
   fun <E : IOException?> bodyComplete(
