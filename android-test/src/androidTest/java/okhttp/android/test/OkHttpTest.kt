@@ -16,8 +16,8 @@
 package okhttp.android.test
 
 import android.os.Build
-import android.support.test.InstrumentationRegistry
-import android.support.test.runner.AndroidJUnit4
+import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.platform.app.InstrumentationRegistry
 import com.google.android.gms.common.GooglePlayServicesNotAvailableException
 import com.squareup.moshi.Moshi
 import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
@@ -64,8 +64,15 @@ import javax.net.ssl.X509TrustManager
 import java.util.logging.Logger
 import okhttp3.internal.platform.AndroidPlatform
 import okhttp3.internal.platform.Android10Platform
+import org.bouncycastle.jce.provider.BouncyCastleProvider
+import org.bouncycastle.jsse.provider.BouncyCastleJsseProvider
+import org.junit.Assert.assertFalse
 import java.io.IOException
 import java.lang.IllegalArgumentException
+import java.security.KeyStore
+import java.security.SecureRandom
+import javax.net.ssl.TrustManager
+import javax.net.ssl.TrustManagerFactory
 
 /**
  * Run with "./gradlew :android-test:connectedCheck" and make sure ANDROID_SDK_ROOT is set.
@@ -177,7 +184,7 @@ class OkHttpTest {
 
     try {
       try {
-        ProviderInstaller.installIfNeeded(InstrumentationRegistry.getTargetContext())
+        ProviderInstaller.installIfNeeded(InstrumentationRegistry.getInstrumentation().targetContext)
       } catch (gpsnae: GooglePlayServicesNotAvailableException) {
         assumeNoException("Google Play Services not available", gpsnae)
       }
@@ -478,14 +485,21 @@ class OkHttpTest {
   fun testCustomTrustManagerWithAndroidCheck() {
     assumeNetwork()
 
+    var withHostCalled = false
+    var withoutHostCalled = false
     val trustManager = object : X509TrustManager {
       override fun checkClientTrusted(chain: Array<out X509Certificate>?, authType: String?) {}
 
-      override fun checkServerTrusted(chain: Array<out X509Certificate>?, authType: String?) {}
+      override fun checkServerTrusted(chain: Array<out X509Certificate>?, authType: String?) {
+        withoutHostCalled = true
+      }
 
       @Suppress("unused", "UNUSED_PARAMETER")
       // called by Android via reflection in X509TrustManagerExtensions
-      fun checkServerTrusted(chain: Array<out X509Certificate>, authType: String, hostname: String) = chain.toList()
+      fun checkServerTrusted(chain: Array<out X509Certificate>, authType: String, hostname: String): List<X509Certificate> {
+        withHostCalled = true
+        return chain.toList()
+      }
 
       override fun getAcceptedIssuers(): Array<X509Certificate> = arrayOf()
     }
@@ -503,6 +517,14 @@ class OkHttpTest {
         .build()
 
     client.get("https://www.facebook.com/robots.txt")
+
+    if (Build.VERSION.SDK_INT < 24) {
+      assertFalse(withHostCalled)
+      assertTrue(withoutHostCalled)
+    } else {
+      assertTrue(withHostCalled)
+      assertFalse(withoutHostCalled)
+    }
   }
 
   @Test
@@ -519,6 +541,51 @@ class OkHttpTest {
       // https://github.com/square/okhttp/issues/5840
       assertEquals("Android internal error", ioe.message)
       assertEquals(IllegalArgumentException::class.java, ioe.cause!!.javaClass)
+    }
+  }
+
+  @Test
+  @Ignore("breaks conscrypt test")
+  fun testBouncyCastleRequest() {
+    assumeNetwork()
+
+    try {
+      Security.insertProviderAt(BouncyCastleProvider(), 1)
+      Security.insertProviderAt(BouncyCastleJsseProvider(), 2)
+
+      var socketClass: String? = null
+
+      val trustManager = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm()).apply {
+        init(null as KeyStore?)
+      }.trustManagers.first() as X509TrustManager
+
+      val sslContext = Platform.get().newSSLContext().apply {
+        // TODO remove most of this code after https://github.com/bcgit/bc-java/issues/686
+        init(null, arrayOf(trustManager), SecureRandom())
+      }
+
+      client = client.newBuilder()
+          .sslSocketFactory(sslContext.socketFactory, trustManager)
+          .eventListenerFactory(clientTestRule.wrap(object : EventListener() {
+            override fun connectionAcquired(call: Call, connection: Connection) {
+              socketClass = connection.socket().javaClass.name
+            }
+          }))
+          .build()
+
+      val request = Request.Builder().url("https://facebook.com/robots.txt").build()
+
+      val response = client.newCall(request).execute()
+
+      response.use {
+        assertEquals(Protocol.HTTP_2, response.protocol)
+        assertEquals(200, response.code)
+        assertEquals("org.bouncycastle.jsse.provider.ProvSSLSocketWrap", socketClass)
+        assertEquals(TlsVersion.TLS_1_2, response.handshake?.tlsVersion)
+      }
+    } finally {
+      Security.removeProvider("BCJSSE")
+      Security.removeProvider("BC")
     }
   }
 
