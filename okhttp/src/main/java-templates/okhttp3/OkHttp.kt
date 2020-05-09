@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2013 Square, Inc.
+ * Copyright (C) 2014 Square, Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,18 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+@file:JvmName("OkHttp")
 package okhttp3
 
-import java.io.IOException
-import java.net.Authenticator
-import okhttp3.Authenticator.Companion.JAVA_NET_AUTHENTICATOR
-
-/**
- * Adapts [Authenticator] to [okhttp3.Authenticator]. Configure OkHttp to use [Authenticator] with
- * [okhttp3.OkHttpClient.Builder.authenticator] or [okhttp3.OkHttpClient.Builder.proxyAuthenticator].
- */
-class JavaNetAuthenticator : okhttp3.Authenticator {
-  @Throws(IOException::class)
-  override fun authenticate(route: Route?, response: Response): Request? =
-    JAVA_NET_AUTHENTICATOR.authenticate(route, response)
-}
+const val VERSION = "$projectVersion"
