@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2014 Square, Inc.
+ * Copyright (C) 2020 Square, Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,9 +13,16 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-@file:JvmName("Version")
-package okhttp3.internal
+package okhttp3.tls.internal.der
 
-import okhttp3.VERSION
-
-const val userAgent = "okhttp/$VERSION"
+/** ASN.1 object identifiers used internally by this implementation. */
+internal object ObjectIdentifiers {
+  const val ecPublicKey = "1.2.840.10045.2.1"
+  const val sha256withEcdsa = "1.2.840.10045.4.3.2"
+  const val rsaEncryption = "1.2.840.113549.1.1.1"
+  const val sha256WithRSAEncryption = "1.2.840.113549.1.1.11"
+  const val subjectAlternativeName = "2.5.29.17"
+  const val basicConstraints = "2.5.29.19"
+  const val commonName = "2.5.4.3"
+  const val organizationalUnitName = "2.5.4.11"
+}
