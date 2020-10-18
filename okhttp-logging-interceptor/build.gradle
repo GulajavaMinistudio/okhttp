@@ -1,9 +1,13 @@
 apply plugin: 'me.champeau.gradle.japicmp'
+applyOsgi(this)
 
 jar {
-  manifest {
-    attributes('Automatic-Module-Name': 'okhttp3.logging')
-  }
+  // MANIFEST.MF, including OSGi bnd instructions.
+  bnd '''
+  Export-Package: okhttp3.logging
+  Automatic-Module-Name: okhttp3.logging
+  Bundle-SymbolicName: com.squareup.okhttp3.logging
+  '''
 }
 
 dependencies {
@@ -12,7 +16,7 @@ dependencies {
 
   testCompileOnly deps.jsr305
   testImplementation deps.junit
-  testImplementation project(':mockwebserver')
+  testImplementation project(':mockwebserver-deprecated')
   testImplementation project(':okhttp-testing-support')
   testImplementation project(':okhttp-tls')
   testImplementation deps.assertj
