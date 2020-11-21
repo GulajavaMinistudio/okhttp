@@ -25,8 +25,9 @@ dependencies {
   implementation project(':mockwebserver-junit5')
   implementation deps.bndResolve
   implementation deps.junit5Api
+  implementation deps.junit5JupiterParams
 
-  implementation("org.graalvm.nativeimage:svm:20.2.0") {
+  implementation("org.graalvm.nativeimage:svm:20.3.0") {
     // https://youtrack.jetbrains.com/issue/KT-29513
     exclude group: "org.graalvm.nativeimage"
     exclude group: "org.graalvm.truffle"
@@ -41,9 +42,13 @@ animalsniffer {
   ignoreFailures = true
 }
 
-if (!properties.containsKey('android.injected.invoked.from.ide')) {
+def isIDE = properties.containsKey('android.injected.invoked.from.ide') ||
+        (System.getenv("XPC_SERVICE_NAME") ?: "").contains("intellij") ||
+        System.getenv("IDEA_INITIAL_DIRECTORY") != null
+if (!isIDE) {
   sourceSets {
     // Not included in IDE as this confuses Intellij for obvious reasons.
+    main.java.srcDirs += project.file("../okhttp/src/test/java")
     main.java.srcDirs += project.file("../okhttp-brotli/src/test/java")
     main.java.srcDirs += project.file("../okhttp-dnsoverhttps/src/test/java")
     main.java.srcDirs += project.file("../okhttp-logging-interceptor/src/test/java")
@@ -54,16 +59,13 @@ if (!properties.containsKey('android.injected.invoked.from.ide')) {
 graal {
   mainClass "okhttp3.RunTestsKt"
   outputName "ConsoleLauncher"
-  graalVersion "20.2.0"
+  graalVersion "20.3.0"
   javaVersion "11"
 
-  option "--enable-https"
   option "--no-fallback"
   option "--allow-incomplete-classpath"
   option "--report-unsupported-elements-at-runtime"
   option "-H:+ReportExceptionStackTraces"
-  option "-H:+TraceClassInitialization"
-  option "--initialize-at-build-time=kotlin.text.Charsets"
 
   if (Os.isFamily(Os.FAMILY_WINDOWS)) {
     // May be possible without, but autodetection is problematic on Windows 10

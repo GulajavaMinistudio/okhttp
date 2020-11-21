@@ -13,16 +13,17 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package okhttp3.curl
+package okhttp3
 
-import picocli.CommandLine.Model.CommandSpec.forAnnotatedObject
-import picocli.codegen.aot.graalvm.ReflectionConfigGenerator
-import java.io.File
+import org.junit.jupiter.api.extension.ExtensionContext
+import org.junit.jupiter.params.provider.Arguments
+import org.junit.jupiter.params.provider.ArgumentsProvider
+import kotlin.jvm.Throws
 
-/**
- * Manual process to update reflect-config.json
- */
-fun main() {
-  val configFile = File("okcurl/src/main/resources/META-INF/native-image/okhttp3/okcurl/reflect-config.json")
-  configFile.writeText(ReflectionConfigGenerator.generateReflectionConfig(forAnnotatedObject(Main())))
+abstract class SimpleProvider: ArgumentsProvider {
+  override fun provideArguments(context: ExtensionContext) =
+    arguments().map { Arguments.of(it) }.stream()
+
+  @Throws(Exception::class)
+  abstract fun arguments(): List<Any>
 }
