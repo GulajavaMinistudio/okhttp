@@ -18,7 +18,6 @@ package okhttp3.internal.connection
 import java.io.IOException
 import java.net.Socket
 import okhttp3.Address
-import okhttp3.EventListener
 import okhttp3.HttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.Route
@@ -54,11 +53,15 @@ import okhttp3.internal.http2.StreamResetException
  * executing [call].
  */
 class ExchangeFinder(
-  private val connectionPool: RealConnectionPool,
+  private val client: OkHttpClient,
   internal val address: Address,
   private val call: RealCall,
-  private val eventListener: EventListener
+  private val chain: RealInterceptorChain,
 ) {
+  private val connectionPool = client.connectionPool.delegate
+  private val eventListener = call.eventListener
+  private val doExtensiveHealthChecks = chain.request.method != "GET"
+
   private var routeSelection: RouteSelector.Selection? = null
   private var routeSelector: RouteSelector? = null
   private var refusedStreamCount = 0
@@ -66,110 +69,51 @@ class ExchangeFinder(
   private var otherFailureCount = 0
   private var nextRouteToTry: Route? = null
 
-  fun find(
-    client: OkHttpClient,
-    chain: RealInterceptorChain
-  ): ExchangeCodec {
-    try {
-      val resultConnection = findHealthyConnection(
-          connectTimeout = chain.connectTimeoutMillis,
-          readTimeout = chain.readTimeoutMillis,
-          writeTimeout = chain.writeTimeoutMillis,
-          pingIntervalMillis = client.pingIntervalMillis,
-          connectionRetryEnabled = client.retryOnConnectionFailure,
-          doExtensiveHealthChecks = chain.request.method != "GET"
-      )
-      return resultConnection.newCodec(client, chain)
-    } catch (e: RouteException) {
-      trackFailure(e.lastConnectException)
-      throw e
-    } catch (e: IOException) {
-      trackFailure(e)
-      throw RouteException(e)
-    }
-  }
-
-  /**
-   * Finds a connection and returns it if it is healthy. If it is unhealthy the process is repeated
-   * until a healthy connection is found.
-   */
-  @Throws(IOException::class)
-  private fun findHealthyConnection(
-    connectTimeout: Int,
-    readTimeout: Int,
-    writeTimeout: Int,
-    pingIntervalMillis: Int,
-    connectionRetryEnabled: Boolean,
-    doExtensiveHealthChecks: Boolean
-  ): RealConnection {
+  fun find(): ExchangeCodec {
+    var firstException: IOException? = null
     while (true) {
-      val candidate = findConnection(
-          connectTimeout = connectTimeout,
-          readTimeout = readTimeout,
-          writeTimeout = writeTimeout,
-          pingIntervalMillis = pingIntervalMillis,
-          connectionRetryEnabled = connectionRetryEnabled
-      )
+      if (call.isCanceled()) throw IOException("Canceled")
 
-      // Confirm that the connection is good.
-      if (candidate.isHealthy(doExtensiveHealthChecks)) {
-        return candidate
+      try {
+        val plan = plan()
+        when (plan) {
+          is ReusePlan -> return plan.connection.newCodec(client, chain)
+
+          is ConnectPlan -> {
+            plan.connect()
+
+            val failure = plan.failure
+            if (failure != null) throw failure
+
+            val result = plan.handleSuccess()
+            return result.newCodec(client, chain)
+          }
+        }
+      } catch (e: IOException) {
+        trackFailure(e)
+
+        if (firstException == null) {
+          firstException = e
+        } else {
+          firstException.addSuppressed(e)
+        }
+        if (!retryAfterFailure()) {
+          throw firstException
+        }
       }
-
-      // If it isn't, take it out of the pool.
-      candidate.noNewExchanges()
-
-      // Make sure we have some routes left to try. One example where we may exhaust all the routes
-      // would happen if we made a new connection and it immediately is detected as unhealthy.
-      if (nextRouteToTry != null) continue
-
-      val routesLeft = routeSelection?.hasNext() ?: true
-      if (routesLeft) continue
-
-      val routesSelectionLeft = routeSelector?.hasNext() ?: true
-      if (routesSelectionLeft) continue
-
-      throw IOException("exhausted all routes")
     }
   }
 
   /**
-   * Returns a connection to host a new stream. This prefers the existing connection if it exists,
-   * then the pool, finally building a new connection.
+   * Returns a healthy connection to host a new stream. This prefers the existing connection if it
+   * exists, then the pool, finally building a new connection.
    *
    * This checks for cancellation before each blocking operation.
    */
   @Throws(IOException::class)
-  private fun findConnection(
-    connectTimeout: Int,
-    readTimeout: Int,
-    writeTimeout: Int,
-    pingIntervalMillis: Int,
-    connectionRetryEnabled: Boolean
-  ): RealConnection {
-    if (call.isCanceled()) throw IOException("Canceled")
-
-    // Attempt to reuse the connection from the call.
-    val callConnection = call.connection // This may be mutated by releaseConnectionNoEvents()!
-    if (callConnection != null) {
-      var toClose: Socket? = null
-      synchronized(callConnection) {
-        if (callConnection.noNewExchanges || !sameHostAndPort(callConnection.route().address.url)) {
-          toClose = call.releaseConnectionNoEvents()
-        }
-      }
-
-      // If the call's connection wasn't released, reuse it. We don't call connectionAcquired() here
-      // because we already acquired it.
-      if (call.connection != null) {
-        check(toClose == null)
-        return callConnection
-      }
-
-      // The call's connection was released.
-      toClose?.closeQuietly()
-      eventListener.connectionReleased(call, callConnection)
-    }
+  private fun plan(): Plan {
+    val reuseCallConnection = planReuseCallConnection()
+    if (reuseCallConnection != null) return reuseCallConnection
 
     // We need a new connection. Give it fresh stats.
     refusedStreamCount = 0
@@ -177,87 +121,182 @@ class ExchangeFinder(
     otherFailureCount = 0
 
     // Attempt to get a connection from the pool.
-    if (connectionPool.callAcquirePooledConnection(address, call, null, false)) {
-      val result = call.connection!!
-      eventListener.connectionAcquired(call, result)
-      return result
+    val pooled1 = planReusePooledConnection()
+    if (pooled1 != null) return pooled1
+
+    // Do blocking calls to plan a route for a new connection.
+    val connect = planConnect()
+
+    // Now that we have a set of IP addresses, make another attempt at getting a connection from
+    // the pool. We have a better chance of matching thanks to connection coalescing.
+    val pooled2 = planReusePooledConnection(connect.connection, connect.routes)
+    if (pooled2 != null) return pooled2
+
+    return connect
+  }
+
+  /**
+   * Returns the connection already attached to the call if it's eligible for a new exchange.
+   *
+   * If the call's connection exists and is eligible for another exchange, it is returned. If it
+   * exists but cannot be used for another exchange, it is closed and this returns null.
+   */
+  private fun planReuseCallConnection(): ReusePlan? {
+    // This may be mutated by releaseConnectionNoEvents()!
+    val candidate = call.connection ?: return null
+
+    // Make sure this connection is healthy & eligible for new exchanges. If it's no longer needed
+    // then we're on the hook to close it.
+    val healthy = candidate.isHealthy(doExtensiveHealthChecks)
+    val toClose: Socket? = synchronized(candidate) {
+      when {
+        !healthy -> {
+          candidate.noNewExchanges = true
+          call.releaseConnectionNoEvents()
+        }
+        candidate.noNewExchanges || !sameHostAndPort(candidate.route().address.url) -> {
+          call.releaseConnectionNoEvents()
+        }
+        else -> null
+      }
     }
 
-    // Nothing in the pool. Figure out what route we'll try next.
-    val routes: List<Route>?
-    val route: Route
-    if (nextRouteToTry != null) {
-      // Use a route from a preceding coalesced connection.
-      routes = null
-      route = nextRouteToTry!!
+    // If the call's connection wasn't released, reuse it. We don't call connectionAcquired() here
+    // because we already acquired it.
+    if (call.connection != null) {
+      check(toClose == null)
+      return ReusePlan(candidate)
+    }
+
+    // The call's connection was released.
+    toClose?.closeQuietly()
+    eventListener.connectionReleased(call, candidate)
+    return null
+  }
+
+  /** Plans to make a new connection by deciding which route to try next. */
+  @Throws(IOException::class)
+  private fun planConnect(): ConnectPlan {
+    // Use a route from a preceding coalesced connection.
+    val localNextRouteToTry = nextRouteToTry
+    if (localNextRouteToTry != null) {
       nextRouteToTry = null
-    } else if (routeSelection != null && routeSelection!!.hasNext()) {
-      // Use a route from an existing route selection.
-      routes = null
-      route = routeSelection!!.next()
-    } else {
-      // Compute a new route selection. This is a blocking operation!
-      var localRouteSelector = routeSelector
-      if (localRouteSelector == null) {
-        localRouteSelector = RouteSelector(address, call.client.routeDatabase, call, eventListener)
-        this.routeSelector = localRouteSelector
+      return ConnectPlan(localNextRouteToTry)
+    }
+
+    // Use a route from an existing route selection.
+    val existingRouteSelection = routeSelection
+    if (existingRouteSelection != null && existingRouteSelection.hasNext()) {
+      return ConnectPlan(existingRouteSelection.next())
+    }
+
+    // Decide which proxy to use, if any. This may block in ProxySelector.select().
+    var newRouteSelector = routeSelector
+    if (newRouteSelector == null) {
+      newRouteSelector = RouteSelector(address, call.client.routeDatabase, call, eventListener)
+      routeSelector = newRouteSelector
+    }
+
+    // List available IP addresses for the current proxy. This may block in Dns.lookup().
+    if (!newRouteSelector.hasNext()) throw IOException("exhausted all routes")
+    val newRouteSelection = newRouteSelector.next()
+    routeSelection = newRouteSelection
+
+    if (call.isCanceled()) throw IOException("Canceled")
+
+    return ConnectPlan(newRouteSelection.next(), newRouteSelection.routes)
+  }
+
+  /**
+   * Returns a plan to reuse a pooled connection, or null if the pool doesn't have a connection for
+   * this address.
+   *
+   * If [connectionToReplace] is non-null, this will swap it for a pooled connection if that
+   * pooled connection uses HTTP/2. That results in fewer sockets overall and thus fewer TCP slow
+   * starts.
+   */
+  private fun planReusePooledConnection(
+    connectionToReplace: RealConnection? = null,
+    routes: List<Route>? = null,
+  ): ReusePlan? {
+    val result = connectionPool.callAcquirePooledConnection(
+      doExtensiveHealthChecks = doExtensiveHealthChecks,
+      address = address,
+      call = call,
+      routes = routes,
+      requireMultiplexed = connectionToReplace != null && !connectionToReplace.isNew
+    ) ?: return null
+
+    // If we coalesced our connection, remember the replaced connection's route. That way if the
+    // coalesced connection later fails we don't waste a valid route.
+    if (connectionToReplace != null) {
+      nextRouteToTry = connectionToReplace.route()
+      if (!connectionToReplace.isNew) {
+        connectionToReplace.socket().closeQuietly()
       }
-      val localRouteSelection = localRouteSelector.next()
-      routeSelection = localRouteSelection
-      routes = localRouteSelection.routes
+    }
 
-      if (call.isCanceled()) throw IOException("Canceled")
+    eventListener.connectionAcquired(call, result)
+    return ReusePlan(result)
+  }
 
-      // Now that we have a set of IP addresses, make another attempt at getting a connection from
-      // the pool. We have a better chance of matching thanks to connection coalescing.
-      if (connectionPool.callAcquirePooledConnection(address, call, routes, false)) {
-        val result = call.connection!!
-        eventListener.connectionAcquired(call, result)
-        return result
+  internal sealed class Plan
+
+  /** Reuse an existing connection. */
+  internal class ReusePlan(
+    val connection: RealConnection,
+  ) : Plan()
+
+  /** Establish a new connection. */
+  internal inner class ConnectPlan(
+    route: Route,
+    val routes: List<Route>? = null,
+  ) : Plan() {
+    val connection = RealConnection(client.taskRunner, connectionPool, route)
+    var complete = false
+    var failure: IOException? = null
+
+    fun connect() {
+      // Tell the call about the connecting call so async cancels work.
+      call.connectionsToCancel += connection
+      try {
+        connection.connect(
+          connectTimeout = chain.connectTimeoutMillis,
+          readTimeout = chain.readTimeoutMillis,
+          writeTimeout = chain.writeTimeoutMillis,
+          pingIntervalMillis = client.pingIntervalMillis,
+          connectionRetryEnabled = client.retryOnConnectionFailure,
+          call = call,
+          eventListener = eventListener,
+        )
+      } catch (e: IOException) {
+        failure = e
+      } finally {
+        call.connectionsToCancel -= connection
+        complete = true
+      }
+    }
+
+    /** Returns the connection to use, which might be different from [connection]. */
+    fun handleSuccess(): RealConnection {
+      call.client.routeDatabase.connected(connection.route())
+
+      // If we raced another call connecting to this host, coalesce the connections. This makes for
+      // 3 different lookups in the connection pool!
+      val pooled3 = planReusePooledConnection(connection, routes)
+      if (pooled3 != null) return pooled3.connection
+
+      synchronized(connection) {
+        connectionPool.put(connection)
+        call.acquireConnectionNoEvents(connection)
       }
 
-      route = localRouteSelection.next()
+      eventListener.connectionAcquired(call, connection)
+      return connection
     }
-
-    // Connect. Tell the call about the connecting call so async cancels work.
-    val newConnection = RealConnection(connectionPool, route)
-    call.connectionToCancel = newConnection
-    try {
-      newConnection.connect(
-          connectTimeout,
-          readTimeout,
-          writeTimeout,
-          pingIntervalMillis,
-          connectionRetryEnabled,
-          call,
-          eventListener
-      )
-    } finally {
-      call.connectionToCancel = null
-    }
-    call.client.routeDatabase.connected(newConnection.route())
-
-    // If we raced another call connecting to this host, coalesce the connections. This makes for 3
-    // different lookups in the connection pool!
-    if (connectionPool.callAcquirePooledConnection(address, call, routes, true)) {
-      val result = call.connection!!
-      nextRouteToTry = route
-      newConnection.socket().closeQuietly()
-      eventListener.connectionAcquired(call, result)
-      return result
-    }
-
-    synchronized(newConnection) {
-      connectionPool.put(newConnection)
-      call.acquireConnectionNoEvents(newConnection)
-    }
-
-    eventListener.connectionAcquired(call, newConnection)
-    return newConnection
   }
 
   fun trackFailure(e: IOException) {
-    nextRouteToTry = null
     if (e is StreamResetException && e.errorCode == ErrorCode.REFUSED_STREAM) {
       refusedStreamCount++
     } else if (e is ConnectionShutdownException) {
@@ -311,6 +350,7 @@ class ExchangeFinder(
 
     synchronized(connection) {
       if (connection.routeFailureCount != 0) return null
+      if (!connection.noNewExchanges) return null // This route is still in use.
       if (!connection.route().address.url.canReuseConnectionFor(address.url)) return null
       return connection.route()
     }

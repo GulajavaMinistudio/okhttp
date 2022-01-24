@@ -19,6 +19,7 @@ import java.io.IOException
 import java.io.InterruptedIOException
 import java.lang.ref.WeakReference
 import java.net.Socket
+import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.RejectedExecutionException
 import java.util.concurrent.TimeUnit.MILLISECONDS
@@ -115,7 +116,7 @@ class RealCall(
 
   @Volatile private var canceled = false
   @Volatile private var exchange: Exchange? = null
-  @Volatile var connectionToCancel: RealConnection? = null
+  internal val connectionsToCancel = CopyOnWriteArrayList<RealConnection>()
 
   override fun timeout(): Timeout = timeout
 
@@ -138,7 +139,9 @@ class RealCall(
 
     canceled = true
     exchange?.cancel()
-    connectionToCancel?.cancel()
+    for (connection in connectionsToCancel) {
+      connection.cancel()
+    }
 
     eventListener.canceled(this)
   }
@@ -187,14 +190,14 @@ class RealCall(
     interceptors += CallServerInterceptor(forWebSocket)
 
     val chain = RealInterceptorChain(
-        call = this,
-        interceptors = interceptors,
-        index = 0,
-        exchange = null,
-        request = originalRequest,
-        connectTimeoutMillis = client.connectTimeoutMillis,
-        readTimeoutMillis = client.readTimeoutMillis,
-        writeTimeoutMillis = client.writeTimeoutMillis
+      call = this,
+      interceptors = interceptors,
+      index = 0,
+      exchange = null,
+      request = originalRequest,
+      connectTimeoutMillis = client.connectTimeoutMillis,
+      readTimeoutMillis = client.readTimeoutMillis,
+      writeTimeoutMillis = client.writeTimeoutMillis
     )
 
     var calledNoMoreExchanges = false
@@ -223,29 +226,33 @@ class RealCall(
    *
    * @param newExchangeFinder true if this is not a retry and new routing can be performed.
    */
-  fun enterNetworkInterceptorExchange(request: Request, newExchangeFinder: Boolean) {
+  fun enterNetworkInterceptorExchange(
+    request: Request,
+    newExchangeFinder: Boolean,
+    chain: RealInterceptorChain,
+  ) {
     check(interceptorScopedExchange == null)
 
     synchronized(this) {
       check(!responseBodyOpen) {
         "cannot make a new request because the previous response is still open: " +
-            "please call response.close()"
+          "please call response.close()"
       }
       check(!requestBodyOpen)
     }
 
     if (newExchangeFinder) {
       this.exchangeFinder = ExchangeFinder(
-          connectionPool,
-          createAddress(request.url),
-          this,
-          eventListener
+        client,
+        createAddress(request.url),
+        this,
+        chain,
       )
     }
   }
 
   /** Finds a new or pooled connection to carry a forthcoming request and response. */
-  internal fun initExchange(chain: RealInterceptorChain): Exchange {
+  internal fun initExchange(): Exchange {
     synchronized(this) {
       check(expectMoreExchanges) { "released" }
       check(!responseBodyOpen)
@@ -253,7 +260,7 @@ class RealCall(
     }
 
     val exchangeFinder = this.exchangeFinder!!
-    val codec = exchangeFinder.find(client, chain)
+    val codec = exchangeFinder.find()
     val result = Exchange(this, eventListener, exchangeFinder, codec)
     this.interceptorScopedExchange = result
     this.exchange = result
@@ -347,14 +354,14 @@ class RealCall(
     val connection = this.connection
     if (connection != null) {
       connection.assertThreadDoesntHoldLock()
-      val socket = synchronized(connection) {
+      val toClose: Socket? = synchronized(connection) {
         releaseConnectionNoEvents() // Sets this.connection to null.
       }
       if (this.connection == null) {
-        socket?.closeQuietly()
+        toClose?.closeQuietly()
         eventListener.connectionReleased(this, connection)
       } else {
-        check(socket == null) // If we still have a connection we shouldn't be closing any sockets.
+        check(toClose == null) // If we still have a connection we shouldn't be closing any sockets.
       }
     }
 
@@ -439,18 +446,18 @@ class RealCall(
     }
 
     return Address(
-        uriHost = url.host,
-        uriPort = url.port,
-        dns = client.dns,
-        socketFactory = client.socketFactory,
-        sslSocketFactory = sslSocketFactory,
-        hostnameVerifier = hostnameVerifier,
-        certificatePinner = certificatePinner,
-        proxyAuthenticator = client.proxyAuthenticator,
-        proxy = client.proxy,
-        protocols = client.protocols,
-        connectionSpecs = client.connectionSpecs,
-        proxySelector = client.proxySelector
+      uriHost = url.host,
+      uriPort = url.port,
+      dns = client.dns,
+      socketFactory = client.socketFactory,
+      sslSocketFactory = sslSocketFactory,
+      hostnameVerifier = hostnameVerifier,
+      certificatePinner = certificatePinner,
+      proxyAuthenticator = client.proxyAuthenticator,
+      proxy = client.proxy,
+      protocols = client.protocols,
+      connectionSpecs = client.connectionSpecs,
+      proxySelector = client.proxySelector
     )
   }
 
@@ -462,8 +469,8 @@ class RealCall(
    */
   private fun toLoggableString(): String {
     return ((if (isCanceled()) "canceled " else "") +
-        (if (forWebSocket) "web socket" else "call") +
-        " to " + redactedUrl())
+      (if (forWebSocket) "web socket" else "call") +
+      " to " + redactedUrl())
   }
 
   internal fun redactedUrl(): String = originalRequest.url.redact()
@@ -482,10 +489,10 @@ class RealCall(
       get() = originalRequest.url.host
 
     val request: Request
-        get() = originalRequest
+      get() = originalRequest
 
     val call: RealCall
-        get() = this@RealCall
+      get() = this@RealCall
 
     /**
      * Attempt to enqueue this async call on [executorService]. This will attempt to clean up
