@@ -22,13 +22,32 @@ internal class ExchangeFinder(
 ) {
   fun find(): RealConnection {
     var firstException: IOException? = null
+    var queuedPlan: RoutePlanner.Plan? = null
     while (true) {
       if (routePlanner.isCanceled()) throw IOException("Canceled")
 
       try {
-        val plan = routePlanner.plan()
-        if (!plan.isConnected) {
-          plan.connect()
+        val plan = when {
+          queuedPlan != null -> {
+            val result = queuedPlan
+            queuedPlan = null
+            result
+          }
+          else -> routePlanner.plan()
+        }
+
+        if (!plan.isReady) {
+          val tcpConnectResult = plan.connectTcp()
+          val connectResult = when {
+            tcpConnectResult.isSuccess -> plan.connectTlsEtc()
+            else -> tcpConnectResult
+          }
+
+          val (_, nextPlan, failure) = connectResult
+
+          queuedPlan = nextPlan
+          if (failure != null) throw failure
+          if (nextPlan != null) continue
         }
         return plan.handleSuccess()
       } catch (e: IOException) {
@@ -39,7 +58,7 @@ internal class ExchangeFinder(
         } else {
           firstException.addSuppressed(e)
         }
-        if (!routePlanner.hasMoreRoutes()) {
+        if (queuedPlan == null && !routePlanner.hasMoreRoutes()) {
           throw firstException
         }
       }
