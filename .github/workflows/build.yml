@@ -19,13 +19,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v2
 
-      - name: Validate Gradle Wrapper
-        uses: gradle/wrapper-validation-action@v1
-
       - name: Configure JDK
-        uses: actions/setup-java@v2
+        uses: actions/setup-java@v3
         with:
-          distribution: 'adopt'
+          distribution: 'zulu'
           java-version: 11
 
       - uses: actions/cache@v2
@@ -43,6 +40,13 @@ jobs:
           ORG_GRADLE_PROJECT_mavenCentralPassword: ${{ secrets.SONATYPE_NEXUS_PASSWORD }}
           ORG_GRADLE_PROJECT_signingInMemoryKey: ${{ secrets.ARTIFACT_SIGNING_PRIVATE_KEY }}
 
+  validation:
+    name: "Validation"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - uses: gradle/wrapper-validation-action@v1
+
   checkjdk11:
     runs-on: ubuntu-latest
 
@@ -50,13 +54,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v2
 
-      - name: Validate Gradle Wrapper
-        uses: gradle/wrapper-validation-action@v1
-
       - name: Configure JDK
-        uses: actions/setup-java@v2
+        uses: actions/setup-java@v3
         with:
-          distribution: 'adopt'
+          distribution: 'zulu'
           java-version: 11
 
       - uses: actions/cache@v2
@@ -76,13 +77,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v2
 
-      - name: Validate Gradle Wrapper
-        uses: gradle/wrapper-validation-action@v1
-
       - name: Configure JDK
-        uses: actions/setup-java@v2
+        uses: actions/setup-java@v3
         with:
-          distribution: 'adopt'
+          distribution: 'zulu'
           java-version: 11
 
       - uses: actions/cache@v2
@@ -108,13 +106,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v2
 
-      - name: Validate Gradle Wrapper
-        uses: gradle/wrapper-validation-action@v1
-
       - name: Configure JDK
-        uses: actions/setup-java@v2
+        uses: actions/setup-java@v3
         with:
-          distribution: 'adopt'
+          distribution: 'zulu'
           java-version: 11
 
       - uses: actions/cache@v2
@@ -141,11 +136,8 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v2
 
-      - name: Validate Gradle Wrapper
-        uses: gradle/wrapper-validation-action@v1
-
       - name: Configure JDK
-        uses: actions/setup-java@v2
+        uses: actions/setup-java@v3
         with:
           distribution: 'zulu'
           java-version: 11
@@ -168,13 +160,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v2
 
-      - name: Validate Gradle Wrapper
-        uses: gradle/wrapper-validation-action@v1
-
       - name: Configure JDK
-        uses: actions/setup-java@v2
+        uses: actions/setup-java@v3
         with:
-          distribution: 'adopt'
+          distribution: 'zulu'
           java-version: 11
 
       - uses: actions/cache@v2
@@ -195,19 +184,16 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v2
 
-      - name: Validate Gradle Wrapper
-        uses: gradle/wrapper-validation-action@v1
-
       - name: Install Old JDK 8
-        uses: actions/setup-java@v2
+        uses: actions/setup-java@v3
         with:
-          distribution: 'adopt'
+          distribution: 'zulu'
           java-version: 8.0.242
 
       - name: Configure JDK
-        uses: actions/setup-java@v2
+        uses: actions/setup-java@v3
         with:
-          distribution: 'adopt'
+          distribution: 'zulu'
           java-version: 11
 
       - uses: actions/cache@v2
@@ -228,13 +214,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v2
 
-      - name: Validate Gradle Wrapper
-        uses: gradle/wrapper-validation-action@v1
-
       - name: Configure JDK
-        uses: actions/setup-java@v2
+        uses: actions/setup-java@v3
         with:
-          distribution: 'adopt'
+          distribution: 'zulu'
           java-version: 11
 
       - uses: actions/cache@v2
@@ -255,13 +238,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v2
 
-      - name: Validate Gradle Wrapper
-        uses: gradle/wrapper-validation-action@v1
-
       - name: Configure JDK
-        uses: actions/setup-java@v2
+        uses: actions/setup-java@v3
         with:
-          distribution: 'adopt'
+          distribution: 'zulu'
           java-version: 11
 
       - uses: actions/cache@v2
@@ -282,13 +262,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v2
 
-      - name: Validate Gradle Wrapper
-        uses: gradle/wrapper-validation-action@v1
-
       - name: Configure JDK
-        uses: actions/setup-java@v2
+        uses: actions/setup-java@v3
         with:
-          distribution: 'adopt'
+          distribution: 'zulu'
           java-version: 11
 
       - uses: actions/cache@v2
@@ -310,13 +287,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v2
 
-      - name: Validate Gradle Wrapper
-        uses: gradle/wrapper-validation-action@v1
-
       - name: Configure JDK
-        uses: actions/setup-java@v2
+        uses: actions/setup-java@v3
         with:
-          distribution: 'adopt'
+          distribution: 'zulu'
           java-version: 11
 
       - uses: actions/cache@v2
@@ -337,13 +311,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v2
 
-      - name: Validate Gradle Wrapper
-        uses: gradle/wrapper-validation-action@v1
-
       - name: Configure JDK
-        uses: actions/setup-java@v2
+        uses: actions/setup-java@v3
         with:
-          distribution: 'adopt'
+          distribution: 'zulu'
           java-version: 11
 
       - uses: actions/cache@v2
@@ -365,13 +336,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v2
 
-      - name: Validate Gradle Wrapper
-        uses: gradle/wrapper-validation-action@v1
-
       - name: Configure JDK
-        uses: actions/setup-java@v2
+        uses: actions/setup-java@v3
         with:
-          distribution: 'adopt'
+          distribution: 'zulu'
           java-version: 11
 
       - uses: actions/cache@v2
@@ -394,13 +362,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v2
 
-      - name: Validate Gradle Wrapper
-        uses: gradle/wrapper-validation-action@v1
-
       - name: Configure JDK
-        uses: actions/setup-java@v2
+        uses: actions/setup-java@v3
         with:
-          distribution: 'adopt'
+          distribution: 'zulu'
           java-version: 11
 
       - uses: actions/cache@v2
@@ -435,13 +400,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v2
 
-      - name: Validate Gradle Wrapper
-        uses: gradle/wrapper-validation-action@v1
-
       - name: Configure JDK
-        uses: actions/setup-java@v2
+        uses: actions/setup-java@v3
         with:
-          distribution: 'adopt'
+          distribution: 'zulu'
           java-version: 11
 
       - uses: actions/cache@v2
@@ -494,13 +456,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v2
 
-      - name: Validate Gradle Wrapper
-        uses: gradle/wrapper-validation-action@v1
-
       - name: Configure JDK
-        uses: actions/setup-java@v2
+        uses: actions/setup-java@v3
         with:
-          distribution: 'adopt'
+          distribution: 'zulu'
           java-version: 11
 
       - uses: actions/cache@v2
