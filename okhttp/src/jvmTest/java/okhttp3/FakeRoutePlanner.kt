@@ -40,6 +40,8 @@ class FakeRoutePlanner(
   private var nextPlanIndex = 0
   private val plans = mutableListOf<FakePlan>()
 
+  override val deferredPlans = ArrayDeque<RoutePlanner.Plan>()
+
   override val address = factory.newAddress("example.com")
 
   fun addPlan(): FakePlan {
@@ -51,11 +53,18 @@ class FakeRoutePlanner(
   override fun isCanceled() = canceled
 
   override fun plan(): FakePlan {
+    // Return deferred plans preferentially. These don't require addPlan().
+    if (deferredPlans.isNotEmpty()) return deferredPlans.removeFirst() as FakePlan
+
     require(nextPlanIndex < plans.size) {
       "not enough plans! call addPlan() in the test to set this up"
     }
     val result = plans[nextPlanIndex++]
     events += "take plan ${result.id}"
+
+    if (result.yieldBeforePlanReturns) {
+      taskFaker.yield()
+    }
 
     val planningThrowable = result.planningThrowable
     if (planningThrowable != null) throw planningThrowable
@@ -64,7 +73,7 @@ class FakeRoutePlanner(
   }
 
   override fun hasNext(failedConnection: RealConnection?): Boolean {
-    return nextPlanIndex < plans.size
+    return deferredPlans.isNotEmpty() || nextPlanIndex < plans.size
   }
 
   override fun sameHostAndPort(url: HttpUrl): Boolean {
@@ -84,12 +93,14 @@ class FakeRoutePlanner(
     val connection = factory.newConnection(pool, factory.newRoute(address))
     var retry: FakePlan? = null
     var retryTaken = false
+    var yieldBeforePlanReturns = false
 
     override val isReady: Boolean
       get() = connectState == ConnectState.TLS_CONNECTED
 
     var tcpConnectDelayNanos = 0L
     var tcpConnectThrowable: Throwable? = null
+    var yieldBeforeTcpConnectReturns = false
     var connectTcpNextPlan: FakePlan? = null
     var tlsConnectDelayNanos = 0L
     var tlsConnectThrowable: Throwable? = null
@@ -124,6 +135,10 @@ class FakeRoutePlanner(
       events += "plan $id TCP connecting..."
 
       taskFaker.sleep(tcpConnectDelayNanos)
+
+      if (yieldBeforeTcpConnectReturns) {
+        taskFaker.yield()
+      }
 
       return when {
         tcpConnectThrowable != null -> {

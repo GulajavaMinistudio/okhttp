@@ -23,6 +23,7 @@ if (graalBuild != null) {
 
 include(":okcurl")
 include(":okhttp")
+include(":okhttp-android")
 include(":okhttp-bom")
 include(":okhttp-brotli")
 include(":okhttp-dnsoverhttps")
@@ -32,6 +33,7 @@ project(":okhttp-logging-interceptor").name = "logging-interceptor"
 include(":okhttp-sse")
 include(":okhttp-testing-support")
 include(":okhttp-tls")
+include(":okhttp-coroutines")
 include(":okhttp-urlconnection")
 include(":samples:compare")
 include(":samples:crawler")
