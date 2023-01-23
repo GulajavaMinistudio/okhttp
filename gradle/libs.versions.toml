@@ -19,7 +19,7 @@ androidx-junit = "androidx.test.ext:junit:1.1.5"
 androidx-test-runner = "androidx.test:runner:1.5.2"
 animalsniffer-annotations = "org.codehaus.mojo:animal-sniffer-annotations:1.22"
 aqute-resolve = { module = "biz.aQute.bnd:biz.aQute.resolve", version.ref = "biz-aQute-bnd" }
-assertj-core = "org.assertj:assertj-core:3.24.1"
+assertj-core = "org.assertj:assertj-core:3.24.2"
 assertk = "com.willowtreeapps.assertk:assertk:0.25"
 bouncycastle-bcpkix = { module = "org.bouncycastle:bcpkix-jdk15to18", version.ref = "org-bouncycastle" }
 bouncycastle-bcprov = { module = "org.bouncycastle:bcprov-jdk15to18", version.ref = "org-bouncycastle" }
@@ -41,7 +41,7 @@ gradlePlugin-dokka = "org.jetbrains.dokka:dokka-gradle-plugin:1.7.20"
 gradlePlugin-errorprone = "net.ltgt.gradle:gradle-errorprone-plugin:3.0.1"
 gradlePlugin-graal = "com.palantir.graal:gradle-graal:0.12.0"
 gradlePlugin-kotlin = { module = "org.jetbrains.kotlin:kotlin-gradle-plugin", version.ref = "org-jetbrains-kotlin" }
-gradlePlugin-mavenPublish = "com.vanniktech:gradle-maven-publish-plugin:0.23.1"
+gradlePlugin-mavenPublish = "com.vanniktech:gradle-maven-publish-plugin:0.23.2"
 gradlePlugin-shadow = "gradle.plugin.com.github.johnrengelman:shadow:7.1.2"
 gradlePlugin-spotless = "com.diffplug.spotless:spotless-plugin-gradle:6.13.0"
 guava-jre = "com.google.guava:guava:31.1-jre"
