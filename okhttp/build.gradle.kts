@@ -4,6 +4,7 @@ import org.jetbrains.kotlin.gradle.dsl.KotlinCompile
 
 plugins {
   kotlin("multiplatform")
+  kotlin("plugin.serialization")
   id("org.jetbrains.dokka")
   id("com.vanniktech.maven.publish.base")
   id("binary-compatibility-validator")
@@ -29,29 +30,32 @@ kotlin {
           }
         }
       }
-      browser {
-      }
     }
   }
 
   sourceSets {
     commonMain {
       kotlin.srcDir("$buildDir/generated/sources/kotlinTemplates")
+      kotlin.srcDir("$buildDir/generated/sources/idnaMappingTable")
       dependencies {
         api(libs.squareup.okio)
       }
     }
     val commonTest by getting {
       dependencies {
-        implementation(libs.kotlin.test.common)
+        implementation(projects.okhttpTestingSupport)
+        implementation(libs.assertk)
         implementation(libs.kotlin.test.annotations)
-        api(libs.assertk)
+        implementation(libs.kotlin.test.common)
+        implementation(libs.kotlinx.serialization.core)
+        implementation(libs.kotlinx.serialization.json)
       }
     }
     val nonJvmMain = create("nonJvmMain") {
       dependencies {
         dependsOn(sourceSets.commonMain.get())
         implementation(libs.kotlinx.coroutines.core)
+        implementation(libs.squareup.okhttp.icu)
       }
     }
     val nonJvmTest = create("nonJvmTest") {
@@ -81,7 +85,6 @@ kotlin {
     getByName("jvmTest") {
       dependencies {
         dependsOn(commonTest)
-        implementation(projects.okhttpTestingSupport)
         implementation(projects.okhttpTls)
         implementation(projects.okhttpUrlconnection)
         implementation(projects.mockwebserver3)
@@ -91,7 +94,12 @@ kotlin {
         implementation(projects.loggingInterceptor)
         implementation(projects.okhttpBrotli)
         implementation(projects.okhttpDnsoverhttps)
+        implementation(projects.okhttpIdnaMappingTable)
         implementation(projects.okhttpSse)
+        implementation(projects.okhttpCoroutines)
+        implementation(libs.kotlinx.coroutines.core)
+        implementation(libs.squareup.moshi)
+        implementation(libs.squareup.moshi.kotlin)
         implementation(libs.squareup.okio.fakefilesystem)
         implementation(libs.conscrypt.openjdk)
         implementation(libs.junit)
@@ -188,6 +196,7 @@ mavenPublishing {
   configure(KotlinMultiplatform(javadocJar = JavadocJar.Dokka("dokkaGfm")))
 }
 
+// Build & use okhttp3/internal/-InternalVersion.kt
 val copyKotlinTemplates = tasks.register<Copy>("copyKotlinTemplates") {
   from("src/commonMain/kotlinTemplates")
   into("$buildDir/generated/sources/kotlinTemplates")
@@ -196,4 +205,18 @@ val copyKotlinTemplates = tasks.register<Copy>("copyKotlinTemplates") {
 }
 tasks.withType<KotlinCompile<*>> {
   dependsOn(copyKotlinTemplates)
+}
+
+// Build & use okhttp3/internal/idn/IdnaMappingTableInstance.kt
+val generateIdnaMappingTableConfiguration: Configuration by configurations.creating
+dependencies {
+  generateIdnaMappingTableConfiguration(projects.okhttpIdnaMappingTable)
+}
+val generateIdnaMappingTable by tasks.creating(JavaExec::class.java) {
+  mainClass.set("okhttp3.internal.idn.GenerateIdnaMappingTableCode")
+  args("$buildDir/generated/sources/idnaMappingTable")
+  classpath = generateIdnaMappingTableConfiguration
+}
+tasks.withType<KotlinCompile<*>> {
+  dependsOn(generateIdnaMappingTable)
 }
