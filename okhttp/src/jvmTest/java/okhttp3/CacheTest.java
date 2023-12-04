@@ -40,6 +40,7 @@ import mockwebserver3.RecordedRequest;
 import mockwebserver3.junit5.internal.MockWebServerInstance;
 import okhttp3.internal.Internal;
 import okhttp3.internal.platform.Platform;
+import okhttp3.java.net.cookiejar.JavaNetCookieJar;
 import okhttp3.testing.PlatformRule;
 import okhttp3.tls.HandshakeCertificates;
 import okio.Buffer;
@@ -364,7 +365,7 @@ public final class CacheTest {
     Path cacheEntry = fileSystem.allPaths().stream()
             .filter((e) -> e.name().endsWith(".0"))
             .findFirst()
-            .orElseThrow();
+            .orElseThrow(NoSuchElementException::new);
     corruptCertificate(cacheEntry);
 
     Response response2 = client.newCall(request).execute(); // Not Cached!
