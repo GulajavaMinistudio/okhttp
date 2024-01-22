@@ -1,5 +1,9 @@
 rootProject.name = "okhttp-parent"
 
+plugins {
+  id("org.gradle.toolchains.foojay-resolver-convention") version("0.8.0")
+}
+
 include(":mockwebserver")
 project(":mockwebserver").name = "mockwebserver3"
 include(":mockwebserver-deprecated")
@@ -43,12 +47,14 @@ include(":samples:slack")
 include(":samples:static-server")
 include(":samples:tlssurvey")
 include(":samples:unixdomainsockets")
+include(":container-tests")
 
 project(":okhttp-logging-interceptor").name = "logging-interceptor"
 
 if (!isKnownBrokenIntelliJ()) {
   include(":okhttp-android")
   include(":android-test")
+  include(":android-test-app")
 }
 
 enableFeaturePreview("TYPESAFE_PROJECT_ACCESSORS")
