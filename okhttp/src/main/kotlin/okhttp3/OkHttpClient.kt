@@ -255,6 +255,10 @@ open class OkHttpClient internal constructor(
   @get:JvmName("pingIntervalMillis")
   val pingIntervalMillis: Int = builder.pingInterval
 
+  /** Web socket close timeout (in milliseconds). */
+  @get:JvmName("webSocketCloseTimeout")
+  val webSocketCloseTimeout: Int = builder.webSocketCloseTimeout
+
   /**
    * Minimum outbound web socket message size (in bytes) that will be compressed.
    * The default is 1024 bytes.
@@ -330,6 +334,7 @@ open class OkHttpClient internal constructor(
         // extensions is always null for clients:
         extensions = null,
         minimumDeflateSize = minWebSocketMessageToCompress,
+        webSocketCloseTimeout = webSocketCloseTimeout.toLong(),
       )
     webSocket.connect(this)
     return webSocket
@@ -575,6 +580,7 @@ open class OkHttpClient internal constructor(
     internal var readTimeout = 10_000
     internal var writeTimeout = 10_000
     internal var pingInterval = 0
+    internal var webSocketCloseTimeout = RealWebSocket.CANCEL_AFTER_CLOSE_MILLIS.toInt()
     internal var minWebSocketMessageToCompress = RealWebSocket.DEFAULT_MINIMUM_DEFLATE_SIZE
     internal var routeDatabase: RouteDatabase? = null
     internal var taskRunner: TaskRunner? = null
@@ -609,6 +615,7 @@ open class OkHttpClient internal constructor(
       this.readTimeout = okHttpClient.readTimeoutMillis
       this.writeTimeout = okHttpClient.writeTimeoutMillis
       this.pingInterval = okHttpClient.pingIntervalMillis
+      this.webSocketCloseTimeout = okHttpClient.webSocketCloseTimeout
       this.minWebSocketMessageToCompress = okHttpClient.minWebSocketMessageToCompress
       this.routeDatabase = okHttpClient.routeDatabase
       this.taskRunner = okHttpClient.taskRunner
@@ -1278,6 +1285,49 @@ open class OkHttpClient internal constructor(
     fun pingInterval(duration: KotlinDuration) =
       apply {
         pingInterval = checkDuration("duration", duration)
+      }
+
+    /**
+     * Sets the close timeout for web socket connections. A value of 0 means no timeout, otherwise
+     * values must be between 1 and [Integer.MAX_VALUE] when converted to milliseconds.
+     *
+     * The close timeout is the maximum amount of time after the client calls [WebSocket.close] to
+     * wait for a graceful shutdown. If the server doesn't respond the web socket will be canceled.
+     * The default value is 60 seconds.
+     */
+    fun webSocketCloseTimeout(
+      timeout: Long,
+      unit: TimeUnit,
+    ) = apply {
+      webSocketCloseTimeout = checkDuration("webSocketCloseTimeout", timeout, unit)
+    }
+
+    /**
+     * Sets the close timeout for web socket connections. A value of 0 means no timeout, otherwise
+     * values must be between 1 and [Integer.MAX_VALUE] when converted to milliseconds.
+     *
+     * The close timeout is the maximum amount of time after the client calls [WebSocket.close] to
+     * wait for a graceful shutdown. If the server doesn't respond the web socket will be canceled.
+     * The default value is 60 seconds.
+     */
+    @SuppressLint("NewApi")
+    @IgnoreJRERequirement
+    fun webSocketCloseTimeout(duration: Duration) =
+      apply {
+        webSocketCloseTimeout(duration.toMillis(), MILLISECONDS)
+      }
+
+    /**
+     * Sets the close timeout for web socket connections. A value of 0 means no timeout, otherwise
+     * values must be between 1 and [Integer.MAX_VALUE] when converted to milliseconds.
+     *
+     * The close timeout is the maximum amount of time after the client calls [WebSocket.close] to
+     * wait for a graceful shutdown. If the server doesn't respond the web socket will be canceled.
+     * The default value is 60 seconds.
+     */
+    fun webSocketCloseTimeout(duration: KotlinDuration) =
+      apply {
+        webSocketCloseTimeout = checkDuration("duration", duration)
       }
 
     /**
